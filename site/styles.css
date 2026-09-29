@@ -650,9 +650,9 @@ button:focus-visible {
   .hero-visual {
     grid-column: 1;
     width: calc(100% + var(--gutter) * 2);
-    height: min(123vw, 500px);
+    height: min(122vw, 900px);
     min-height: 388px;
-    max-height: 500px;
+    max-height: 900px;
     margin-inline: calc(var(--gutter) * -1);
   }
 
