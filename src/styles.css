@@ -333,7 +333,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
   .caption-rule { height: 43px; }
   .photo-caption p { font-size: 13px; }
   .photo-caption span:not(.caption-rule) { font-size: 11px; }
-  .phone-showcase { top: 3%; right: 8%; width: min(40vw, 280px); }
+  .phone-showcase { top: 50%; right: auto; left: calc((100% - min(52%, 300px)) / 2); width: min(52%, 300px); translate: 0 -50%; }
   .chapter-transition { width: 100%; min-height: 0; margin: 34px 0 0; padding-inline: var(--gutter); display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
   .chapter-preview { position: relative; width: 100%; height: auto; aspect-ratio: 3 / 1; border-radius: 8px; }
   .chapter-transition-label { position: static; width: auto; }
@@ -367,6 +367,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
 @media (max-width: 390px) {
   .hero h1 { font-size: 2.55rem; }
   .hero-visual { min-height: 360px; }
+  .phone-showcase { left: calc((100% - min(55%, 220px)) / 2); width: min(55%, 220px); }
   .photo-caption { top: 7%; }
   .site-footer nav { gap: 14px; }
 }
