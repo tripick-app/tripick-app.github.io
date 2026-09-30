@@ -8,7 +8,7 @@ web
 
 ## Stack
 
-Inferred for this site: static HTML and CSS with minimal JavaScript, so GitHub Pages can publish it without a build service. No framework preference was provided.
+React 19 with Vite and Motion for React. pnpm 11.25.0 manages dependencies; GitHub Actions builds the static site and deploys the `dist` output to GitHub Pages.
 
 ## Users
 

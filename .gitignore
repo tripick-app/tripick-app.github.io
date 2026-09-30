@@ -1,2 +1,4 @@
-# Local design and review artifacts; GitHub Pages publishes only site/.
+# Local design and review artifacts.
 .impeccable/
+node_modules/
+dist/

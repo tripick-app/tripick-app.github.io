@@ -1,0 +1,4 @@
+{
+  "prompt": "Precise image edit: remove only the foreground overlays from the supplied coastal scene so it becomes the clean background photograph used behind the Tripick website's separate phone and labels. Remove the entire black iPhone and all app-screen interface, every UI label or caption, and the white rectangular masks behind those labels. Reconstruct the hidden scenery naturally from the immediately surrounding photo. Preserve the original photograph's composition and viewpoint exactly: keep the same low sun at left-center, sea horizon, mountains, coastline, hillside houses, pink flowers, stone ledge, tree canopy, colors and late-day light. Outside the removed overlays, keep the visible scenery unchanged. Output only the continuous full-bleed 16:10 landscape photograph. No phone, screen, text, label, white rectangle, interface, logo, border, or watermark.\n",
+  "createdAt": "2026-09-29T07:23:22.883Z"
+}
