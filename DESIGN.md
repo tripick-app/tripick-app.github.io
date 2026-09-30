@@ -110,7 +110,7 @@ components:
 
 **Creative North Star: "A Trip Told in Frames"**
 
-This iOS-inspired web introduction treats each journey as an editorial sequence of photographs. A cool paper ground and deep, heavy typography leave room for the landscape to carry the color; the actual Tripick phone screen overlaps the coastal sunset image to make the product concrete. Locally hosted Inter and Noto Sans SC variable fonts carry both English and Simplified Chinese without changing the page's visual voice.
+This iOS-inspired web introduction treats each journey as an editorial sequence of photographs. A cool paper ground and deep, heavy typography leave room for the landscape to carry the color; a real Tripick curation-preview screen overlaps the coastal sunset image to show the product's result. The screen was captured in Chinese and English from the running iOS app with generated sample travel photos. Locally hosted Inter and Noto Sans SC variable fonts carry both languages without changing the page's visual voice.
 
 The page opens with a promise and one in-page action, then moves through travel chapters, a review sequence, and a quiet privacy section before closing. On desktop, copy and a wide photograph share the hero while the phone screen crosses the image; on mobile, copy stacks above a full-bleed image and phone. The later photo pair changes from a horizontal chapter line to a vertical sequence. Motion is brief and restrained: the hero settles into place and the chapter imagery resolves as it enters view. The app wraps these sequences in MotionConfig with reduced motion set to follow the user preference; CSS also disables smooth scrolling and nearly cancels native transition durations when reduced motion is requested. Chinese is the first-visit language; the header switch exposes the English version and remembers the choice.
 
@@ -185,7 +185,7 @@ Pill shapes are reserved for the primary action and the language control. Photo 
 - **Main navigation:** one-line desktop links with text-only hover color. It gives way to the footer links on narrow screens.
 - **Language switch:** a light capsule button with a generous hit area, visible keyboard focus, and a label naming the language it will switch to.
 - **Primary action link:** a blue capsule with a right arrow. It scrolls to the process section; it is an anchor styled as a button, not a download control.
-- **Hero photo stage:** a coastal sunset plate with a real Tripick app screenshot inside a supplied iPhone frame. Preserve the overlap and keep the image caption small.
+- **Hero photo stage:** a coastal sunset plate with the localized Tripick curation-preview screenshot inside a supplied iPhone frame. Preserve the overlap and keep the image caption small. Responsive WebP sources and a tiny placeholder keep the phone image quick to load.
 - **Chapter moment:** a travel image followed by a short caption and an explicit illustrative-sample note.
 - **Review sequence:** three ruled rows move from on-device organization through user review to confirmation in Photos.
 - **Privacy band:** a lock glyph, one explanation, a privacy link, and three short trust points on a pale blue field.

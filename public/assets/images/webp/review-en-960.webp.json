@@ -1,0 +1,7 @@
+{
+  "origin": "Tripick iOS ReviewView captured on an iPhone 18 Pro Max simulator with en locale after on-device curation of generated sample travel photos.",
+  "captureDate": "2026-09-30",
+  "note": "The real app UI was rendered in a temporary development build that automatically navigated to the existing review view. No interface was composited or invented.",
+  "derivedFrom": "/assets/plates/phone-review-en.png",
+  "variant": "960"
+}

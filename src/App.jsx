@@ -6,7 +6,7 @@ const copy = {
     pageTitle: "Tripick — 让每段旅程，都留下几张想回看的照片。",
     description: "Tripick 在 iPhone 本地整理旅程照片。按拍摄时间与可用的地点信息归拢，再由你复核和确认。",
     heroImageAlt: "夕阳照亮海面、山坡与海岸村庄的旅行风景",
-    appScreenAlt: "Tripick 新建精选时选择相册的应用界面",
+    appScreenAlt: "Tripick 精选预览界面，展示六张候选旅行照片、分析信息和确认操作",
     coastImageAlt: "夕阳下的海岸旅程示意画面",
     mountainImageAlt: "雾中的山脉与森林，另一段旅程示意画面",
     skip: "跳到正文",
@@ -54,7 +54,7 @@ const copy = {
     pageTitle: "Tripick — A few photos from every trip, worth revisiting.",
     description: "Tripick organizes trip photos on your iPhone by capture time and available location, then lets you review and confirm your picks.",
     heroImageAlt: "Coastal villages and hills beside the sea at sunset",
-    appScreenAlt: "Tripick screen for choosing an album before creating a curated selection",
+    appScreenAlt: "Tripick curation preview showing six candidate travel photos, analysis details, and the confirmation action",
     coastImageAlt: "An illustrative coastal scene at sunset",
     mountainImageAlt: "Misty mountains and forest, an illustrative scene from another part of the trip",
     skip: "Skip to content",
@@ -115,10 +115,17 @@ const imageAssets = {
     width: 2172,
     height: 724,
   },
-  app: {
-    src: "/assets/plates/phone-app-screen.png",
-    srcSet: "/assets/images/webp/screen-640.webp 640w, /assets/images/webp/screen-960.webp 960w, /assets/images/webp/screen-1320.webp 1320w",
-    placeholder: "/assets/images/webp/screen-blur.webp",
+  appZh: {
+    src: "/assets/plates/phone-review-zh.png",
+    srcSet: "/assets/images/webp/review-zh-640.webp 640w, /assets/images/webp/review-zh-960.webp 960w, /assets/images/webp/review-zh-1320.webp 1320w",
+    placeholder: "/assets/images/webp/review-zh-blur.webp",
+    width: 1320,
+    height: 2868,
+  },
+  appEn: {
+    src: "/assets/plates/phone-review-en.png",
+    srcSet: "/assets/images/webp/review-en-640.webp 640w, /assets/images/webp/review-en-960.webp 960w, /assets/images/webp/review-en-1320.webp 1320w",
+    placeholder: "/assets/images/webp/review-en-blur.webp",
     width: 1320,
     height: 2868,
   },
@@ -264,10 +271,11 @@ function App() {
             >
               <div className="phone-screen">
                 <ResponsivePhoto
-                  name="app"
+                  key={language}
+                  name={language === "en" ? "appEn" : "appZh"}
                   className="phone-screen-image"
                   alt={strings.appScreenAlt}
-                  sizes="(max-width: 800px) 40vw, (max-width: 1120px) 30vw, 28vw"
+                  sizes="(max-width: 800px) 40vw, (max-width: 1120px) 26vw, 20vw"
                   loading="eager"
                 />
               </div>
