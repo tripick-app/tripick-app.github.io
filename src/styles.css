@@ -197,12 +197,16 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
 
 .hero-photo {
   position: absolute;
-  inset: 0;
+  inset: 0 0 0;
   z-index: 0;
   width: 100%;
   height: 100%;
   border-radius: 32px 0 0 32px;
   object-position: center;
+}
+
+@media (min-width: 801px) {
+  .hero-photo { top: -4.5%; height: 104.5%; }
 }
 
 .photo-caption, .chapter-transition {
@@ -240,7 +244,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
 .chapter-transition-label span { color: #626874; font-size: 13px; line-height: 1.45; }
 
 .chapter-section, .curation-section, .privacy-section, .closing-section { width: min(100%, var(--max-width)); margin-inline: auto; padding-inline: var(--gutter); }
-.chapter-section { min-height: 820px; padding-block: 92px 136px; display: grid; grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr); align-items: center; gap: clamp(60px, 9vw, 144px); }
+.chapter-section { padding-block: 92px 136px; display: grid; grid-template-columns: minmax(280px, 0.78fr) minmax(0, 1.22fr); align-items: center; gap: clamp(60px, 9vw, 144px); }
 .section-copy { max-width: 540px; }
 .section-copy h2, .privacy-copy h2, .closing-section h2 { margin: 0; font-size: clamp(2.35rem, 4vw, 3.8rem); font-weight: 730; line-height: 1.2; letter-spacing: -0.035em; text-wrap: balance; }
 .section-copy > p, .privacy-copy > p { max-width: 39ch; margin: 24px 0 0; color: var(--muted); font-size: 17px; line-height: 1.85; }
@@ -306,7 +310,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
   .hero-visual { min-height: 475px; height: 49vw; }
   .phone-showcase { right: 10%; width: 41%; }
   .chapter-section, .curation-section { gap: 58px; }
-  .chapter-section { min-height: 690px; padding-block: 104px 100px; }
+  .chapter-section { padding-block: 84px 100px; }
   .curation-section { grid-template-columns: minmax(0, 1fr) minmax(300px, 0.95fr); }
 }
 
@@ -324,7 +328,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid #3c7cf2; outline-offs
   .primary-link { min-height: 58px; margin-top: 28px; padding-inline: 24px 21px; font-size: 16px; }
   .hero-assurance { margin-top: 14px; font-size: 12px; }
   .hero-visual { grid-column: 1; width: calc(100% + var(--gutter) * 2); height: min(122vw, 900px); min-height: 388px; max-height: 900px; margin-inline: calc(var(--gutter) * -1); }
-  .hero-photo { border-radius: 0; object-position: 55% center; }
+  .hero-photo { top: 0; height: 100%; border-radius: 0; object-position: 55% center; }
   .photo-caption { top: 8%; left: 7%; gap: 10px; }
   .caption-rule { height: 43px; }
   .photo-caption p { font-size: 13px; }
