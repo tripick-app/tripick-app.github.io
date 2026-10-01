@@ -489,6 +489,11 @@ export async function headWithBoundedRetry(
   throw new Error("HEAD重试达到意外状态。");
 }
 
+export function describePreUploadHeadFailure(assetPath: string, error: unknown): string {
+  const safePath = assertSafeAssetPath(assetPath);
+  return `${safePath} 上传前 HEAD 失败（${classifyFetchFailure(error)}）；未覆盖现有版本。`;
+}
+
 function publicReadFailureDetail(error: unknown): string {
   if (error instanceof Error) {
     const statusMatch = error.message.match(/^COS CORS 探测对象返回 HTTP (\d{3})。$/);
@@ -516,25 +521,58 @@ export function summarizeCoscliFailure(result: CoscliCommandResult, command = "�
   const stdout = Buffer.isBuffer(result?.stdout) ? result.stdout.toString("utf8") : String(result?.stdout ?? "");
   const stderr = Buffer.isBuffer(result?.stderr) ? result.stderr.toString("utf8") : String(result?.stderr ?? "");
   const output = [stdout, stderr, diagnostics].join("\n");
-  const code =
+  const candidateCode =
     output.match(/<Code>\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\s*<\/Code>/i)?.[1] ??
     output.match(/\b(?:COS\s+)?(?:ErrorCode|Code)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\b/i)?.[1];
+  const knownCosCodes = new Set([
+    "AccessDenied",
+    "EntityTooLarge",
+    "InternalError",
+    "InvalidAccessKeyId",
+    "InvalidArgument",
+    "InvalidRequest",
+    "MalformedXML",
+    "NoSuchBucket",
+    "NoSuchKey",
+    "NoSuchUpload",
+    "PreconditionFailed",
+    "RequestTimeout",
+    "SignatureDoesNotMatch",
+    "SlowDown",
+    "ServiceUnavailable",
+  ]);
+  const code = candidateCode && knownCosCodes.has(candidateCode) ? candidateCode : null;
   const status =
     output.match(/\bHTTP(?:\/\d(?:\.\d)?)?\s*[: ]?\s*(\d{3})\b/i)?.[1] ??
     output.match(/<HTTPStatus>\s*(\d{3})\s*<\/HTTPStatus>/i)?.[1] ??
     output.match(/\b(?:StatusCode|HTTPStatus|status(?:\s*code)?)\s*[:=]\s*(\d{3})\b/i)?.[1];
   const rawErrorCode = result.error?.code;
-  const errorCode = typeof rawErrorCode === "string" && /^[A-Z0-9_]{1,24}$/.test(rawErrorCode) ? rawErrorCode : null;
+  const knownSystemCodes = new Set([
+    "EACCES",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EHOSTUNREACH",
+    "EIO",
+    "ENETUNREACH",
+    "ENOENT",
+    "ENOTDIR",
+    "ETIMEDOUT",
+    "EPIPE",
+  ]);
+  const errorCode = typeof rawErrorCode === "string" && knownSystemCodes.has(rawErrorCode) ? rawErrorCode : null;
+  const unknownFlag = output.match(/\bunknown flag\s*:\s*(--[a-z][a-z0-9-]{0,50})(?![a-z0-9-])/i)?.[1];
   const safeCategories: ReadonlyArray<readonly [RegExp, string]> = [
-    [/\bAccessDenied\b|access denied|forbidden|permission denied/i, "访问权限拒绝"],
+    [/\bAccessDenied\b|access denied|forbidden/i, "COS访问权限拒绝"],
     [/\bSignatureDoesNotMatch\b|\bInvalidAccessKeyId\b/i, "签名或密钥无效"],
     [/\bNoSuchBucket\b/i, "目标桶不存在"],
     [/\bNoSuchKey\b/i, "目标对象不存在"],
     [/secretID is missing|secretKey is missing/i, "COSCLI未读取到凭据字段"],
-    [/endpoint is missing|missing endpoint/i, "COS端点配置缺失"],
+    [/endpoint is missing|missing endpoint|missing parameter endpoint/i, "COS端点配置缺失"],
     [/invalid meta|copy invalid meta/i, "上传元数据格式错误"],
-    [/no such file|file not found|cannot stat/i, "本地产物路径不存在"],
-    [/unknown flag|unknown command/i, "COSCLI参数不兼容"],
+    [/no such file or directory|file not found|cannot stat|failed to open (?:source|file)/i, "本地配置或源文件路径不存在/不可读"],
+    [/permission denied|operation not permitted/i, "本地文件权限不足"],
+    [/yaml:\s*(?:unmarshal|line\s+\d+|did not find|found character|cannot unmarshal)|unmarshal errors?|failed to (?:read|parse|load) config|cannot parse config|config file need end with/i, "COSCLI配置文件解析失败"],
+    [/unknown command|unknown shorthand flag|flag provided but not defined|unknown flag/i, "COSCLI命令参数不兼容"],
     [/x509|TLS handshake|connection refused|timed? ?out/i, "网络或TLS连接失败"],
   ];
   const safeCategory = safeCategories.find(([pattern]) => pattern.test(output))?.[1] ?? null;
@@ -542,6 +580,7 @@ export function summarizeCoscliFailure(result: CoscliCommandResult, command = "�
     errorCode ? `本地错误码 ${errorCode}` : null,
     status ? `HTTP ${status}` : null,
     code ? `COS 错误码 ${code}` : null,
+    unknownFlag ? `不兼容参数 ${unknownFlag}` : null,
     safeCategory,
   ].filter(Boolean);
   return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
@@ -656,8 +695,8 @@ async function uploadManifest(root: string, manifest: ReleaseManifest): Promise<
       let head;
       try {
         head = await headWithBoundedRetry(asset.url);
-      } catch {
-        throw new Error(`${asset.path} 上传前 HEAD 失败；未覆盖现有版本。`);
+      } catch (error) {
+        throw new Error(describePreUploadHeadFailure(asset.path, error));
       }
       if (head.status === 200) continue;
       if (head.status !== 404) {

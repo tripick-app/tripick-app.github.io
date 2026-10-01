@@ -12,6 +12,7 @@ import {
   SITE_ORIGIN,
   assertAssetResponse,
   classifyFetchFailure,
+  describePreUploadHeadFailure,
   headWithBoundedRetry,
   isRetryableFetchFailure,
   assertSafeAssetPath,
@@ -96,6 +97,15 @@ test("HEAD连接重置分类只暴露白名单错误码，不回显底层文本"
   assert.equal(response.status, 404);
   assert.equal(requests, 2);
   assert.deepEqual(waits, [250]);
+
+  const headFailure = describePreUploadHeadFailure(
+    "assets/fonts/site.woff2",
+    Object.assign(new Error("sensitive synthetic host and response detail"), { code: "ECONNRESET" }),
+  );
+  assert.match(headFailure, /上传前 HEAD 失败（网络连接重置（ECONNRESET））/);
+  assert.match(headFailure, /未覆盖现有版本/);
+  assert.doesNotMatch(headFailure, /sensitive synthetic/);
+  assert.throws(() => describePreUploadHeadFailure("../../private.txt", new Error("detail")), /不安全/);
 });
 
 test("只重写根 /assets/ 引用，不重复改写完整 COS URL 或嵌套路径", () => {
@@ -217,4 +227,41 @@ test("已知COS错误类别使用固定标签，不回显错误正文", () => {
   const configMessage = summarizeCoscliFailure({ status: 1, stdout: "secretID is missing" }, "cp");
   assert.match(configMessage, /COSCLI未读取到凭据字段/);
   assert.doesNotMatch(configMessage, /secretID is missing/);
+});
+
+test("coscli参数、配置解析和本地路径失败使用安全分类", () => {
+  const unknownFlag = summarizeCoscliFailure({
+    status: 1,
+    stderr: "unknown flag: --tripick-invalid-flag=synthetic-secret-value",
+  }, "cp");
+  assert.match(unknownFlag, /COSCLI命令参数不兼容/);
+  assert.match(unknownFlag, /不兼容参数 --tripick-invalid-flag/);
+  assert.doesNotMatch(unknownFlag, /synthetic-secret-value|=/);
+
+  const configParse = summarizeCoscliFailure({
+    status: 1,
+    stderr: "yaml: unmarshal errors: line 1: synthetic-secret-value",
+  }, "config show");
+  assert.match(configParse, /COSCLI配置文件解析失败/);
+  assert.doesNotMatch(configParse, /synthetic-secret-value|line 1/);
+
+  const localSource = summarizeCoscliFailure({
+    status: 1,
+    stdout: "stat /runner/_temp/private/source.png: no such file or directory",
+  }, "cp");
+  assert.match(localSource, /本地配置或源文件路径不存在\/不可读/);
+  assert.doesNotMatch(localSource, /\/runner|source\.png/);
+
+  const missingEndpoint = summarizeCoscliFailure({ status: 1, stderr: "missing parameter Endpoint" }, "cp");
+  assert.match(missingEndpoint, /COS端点配置缺失/);
+
+  const localPermission = summarizeCoscliFailure({ status: 1, stderr: "open /private/cos.yaml: permission denied" }, "config show");
+  assert.match(localPermission, /本地文件权限不足/);
+  assert.doesNotMatch(localPermission, /\/private/);
+
+  const unknownCode = summarizeCoscliFailure({
+    status: 1,
+    stderr: "<Code>synthetic-secret-value</Code>",
+  }, "cp");
+  assert.doesNotMatch(unknownCode, /synthetic-secret-value/);
 });
