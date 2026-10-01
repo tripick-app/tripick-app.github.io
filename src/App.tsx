@@ -35,13 +35,19 @@ const zhCopy = {
     momentOne: "海岸暮色",
     momentTwo: "雾起山间",
     curationTitle: "留下哪些照片，最后由你确认。",
-    curationBody: "Tripick 在 iPhone 本地参考画面质量、人物状态、连拍与相似度，帮你减少重复、挑出值得回看的候选。你可以检查和调整，再确认写入 Apple Photos。",
-    curationNote: "Tripick 不删除或改动原始照片。",
-    reviewStageOne: "本地整理",
+    curationBody: "Tripick 在 iPhone 上参考画面清晰度、人物状态、连拍和相似度，帮你先找出值得回看的照片。",
+    curationNote: "逐张检查、调整，再确认写入 Apple Photos。原始照片不会被删除或改动。",
+    curationVisualLabel: "Tripick 整理界面",
+    curationVisualNote: "界面中的旅行照片为生成示例",
+    curationScreenAlt: "Tripick 精选复核界面预览，含生成的示例旅行照片",
+    reviewStageOne: "整理候选",
     reviewStageTwo: "检查与调整",
-    reviewStageThree: "确认写入",
-    privacyTitle: "你的照片，只在你的设备上整理。",
-    privacyBody: "照片、缩略图和分析结果都留在 iPhone 上，不会上传到 Tripick 服务器或第三方云端 AI。只有你复核并确认后，Tripick 才会在 Apple Photos 中创建或合并精选相簿、标记收藏。",
+    reviewStageThree: "确认写入 Photos",
+    privacyTitle: "照片和分析结果，留在你的 iPhone。",
+    privacyBody: "照片、缩略图和分析结果都在设备本地处理，不会上传到 Tripick 服务器或第三方云端 AI。你确认后，Tripick 才会在 Apple Photos 中创建或合并相簿、标记收藏。",
+    privacyDiagramLabel: "照片和分析结果在 iPhone 本地整理，不上传到云端。",
+    privacyDiagramDevice: "本地整理",
+    privacyDiagramNoUpload: "不上传",
     privacyLink: "阅读隐私说明",
     privacyPointOne: "设备本地分析",
     privacyPointTwo: "你复核、你确认",
@@ -85,14 +91,20 @@ const copy = {
     chapterBody: "Tripick groups a journey by capture time and uses location when a photo includes it. That helps bring distinct parts of a trip together, without searching your whole library by hand.",
     momentOne: "Coast at dusk",
     momentTwo: "Mist over the mountains",
-    curationTitle: "You choose what stays.",
-    curationBody: "On-device visual signals help bring forward clear photos, good expressions, burst representatives, and similar images. Review and adjust the suggestions, then confirm before Tripick makes changes in Apple Photos.",
-    curationNote: "Tripick never deletes or alters your original photos.",
-    reviewStageOne: "Organized on-device",
+    curationTitle: "A smaller selection, chosen by you.",
+    curationBody: "On-device signals assess image quality, expressions, burst representation, and similarity to surface photos worth revisiting.",
+    curationNote: "Review and adjust each suggestion, then confirm before Tripick changes Apple Photos. Your originals stay untouched.",
+    curationVisualLabel: "Tripick review screen",
+    curationVisualNote: "Travel photos in the preview are generated examples",
+    curationScreenAlt: "Tripick review screen preview with generated sample travel photos",
+    reviewStageOne: "Organize candidates",
     reviewStageTwo: "Review and adjust",
     reviewStageThree: "Confirm in Photos",
-    privacyTitle: "Your photos stay on your iPhone.",
-    privacyBody: "Photos, thumbnails, and analysis results stay on your device. Tripick does not upload them to its servers or to third-party cloud AI. Only after you review and confirm will Tripick create or merge a curated album and mark favorites in Apple Photos.",
+    privacyTitle: "Photos and analysis stay on your iPhone.",
+    privacyBody: "Photos, thumbnails, and analysis results stay on your device; Tripick does not upload them to its servers or third-party cloud AI. Only after you review and confirm does Tripick create or merge an album and mark favorites in Apple Photos.",
+    privacyDiagramLabel: "Photos and analysis are organized on iPhone and are not uploaded to the cloud.",
+    privacyDiagramDevice: "Organized on-device",
+    privacyDiagramNoUpload: "Not uploaded",
     privacyLink: "Read the privacy notice",
     privacyPointOne: "Analysis happens on-device",
     privacyPointTwo: "You review and confirm",
@@ -198,7 +210,7 @@ function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", p
 
   return (
     <picture
-      className={`photo-media ${className} is-${status}`}
+      className={`photo-media ${className}${priority ? " is-priority" : ""} is-${status}`}
       style={pictureStyle}
       aria-hidden={decorative || undefined}
     >
@@ -333,6 +345,7 @@ function App() {
                       alt={strings.appScreenAlt}
                       sizes="(max-width: 800px) 40vw, (max-width: 1120px) 26vw, 20vw"
                       loading="eager"
+                      priority
                     />
                     <m.span
                       className="phone-glint"
@@ -413,10 +426,41 @@ function App() {
 
         <section className="curation-section" aria-labelledby="curation-title">
           <div className="section-copy">
+            <span className="section-kicker">{strings.curationVisualLabel}</span>
             <h2 id="curation-title">{strings.curationTitle}</h2>
             <p>{strings.curationBody}</p>
             <p className="small-note">{strings.curationNote}</p>
           </div>
+          <m.div
+            className="curation-proof"
+            initial={{ opacity: 1, y: 18, scale: 0.985 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ once: true, amount: 0.28 }}
+            transition={{ duration: 0.76, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <span className="curation-proof-index" aria-hidden="true">TRIPICK <i>·</i> REVIEW</span>
+            <div className="curation-phone" lang={language === "en" ? "en" : "zh-Hans"}>
+              <div className="curation-phone-screen">
+                <ResponsivePhoto
+                  key={`curation-${language}`}
+                  name={language === "en" ? "appEn" : "appZh"}
+                  className="curation-phone-screen-image"
+                  alt={strings.curationScreenAlt}
+                  sizes="(max-width: 800px) 45vw, (max-width: 1120px) 24vw, 18vw"
+                  loading="lazy"
+                />
+              </div>
+              <ResponsivePhoto
+                name="frame"
+                className="curation-phone-frame"
+                alt=""
+                sizes="(max-width: 800px) 46vw, (max-width: 1120px) 25vw, 19vw"
+                loading="lazy"
+                decorative
+              />
+            </div>
+            <span className="curation-proof-note">{strings.curationVisualNote}</span>
+          </m.div>
           <ol className="review-flow" aria-label={strings.curationTitle}>
             <li><span>01</span><strong>{strings.reviewStageOne}</strong></li>
             <li><span>02</span><strong>{strings.reviewStageTwo}</strong></li>
@@ -436,11 +480,38 @@ function App() {
               <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 15 15 5M6 5h9v9" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
             </a>
           </div>
-          <ul className="privacy-aside">
-            <li>{strings.privacyPointOne}</li>
-            <li>{strings.privacyPointTwo}</li>
-            <li>{strings.privacyPointThree}</li>
-          </ul>
+          <div className="privacy-visual">
+            <div className="privacy-map" role="img" aria-label={strings.privacyDiagramLabel}>
+              <div className="privacy-map-device">
+                <svg viewBox="0 0 48 64" aria-hidden="true">
+                  <rect x="5.5" y="2.5" width="37" height="59" rx="8" fill="none" stroke="currentColor" strokeWidth="2" />
+                  <path d="M19 8h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  <rect x="12" y="17" width="10" height="12" rx="2" fill="currentColor" opacity=".2" />
+                  <rect x="26" y="17" width="10" height="12" rx="2" fill="currentColor" opacity=".42" />
+                  <rect x="12" y="33" width="24" height="7" rx="2" fill="currentColor" opacity=".28" />
+                  <rect x="12" y="44" width="18" height="5" rx="2.5" fill="currentColor" opacity=".18" />
+                  <circle cx="24" cy="56" r="1.5" fill="currentColor" />
+                </svg>
+                <div>
+                  <strong>iPhone</strong>
+                  <span>{strings.privacyDiagramDevice}</span>
+                </div>
+              </div>
+              <span className="privacy-map-route" aria-hidden="true"><i /></span>
+              <div className="privacy-map-cloud">
+                <svg viewBox="0 0 64 52" aria-hidden="true">
+                  <path d="M17 39h31a10 10 0 0 0 .7-20 16 16 0 0 0-30.1-2.8A11.5 11.5 0 0 0 17 39Z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+                  <path d="m20 44 25-36" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
+                </svg>
+                <strong>{strings.privacyDiagramNoUpload}</strong>
+              </div>
+            </div>
+            <ul className="privacy-aside">
+              <li>{strings.privacyPointOne}</li>
+              <li>{strings.privacyPointTwo}</li>
+              <li>{strings.privacyPointThree}</li>
+            </ul>
+          </div>
         </section>
 
         <section className="closing-section" aria-labelledby="closing-title">
