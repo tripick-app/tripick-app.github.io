@@ -350,7 +350,7 @@ async function assertPublicCorsRead() {
 export function summarizeCoscliFailure(result, command = "命令", diagnostics = "") {
   const output = [result?.stdout, result?.stderr]
     .map((value) => Buffer.isBuffer(value) ? value.toString("utf8") : String(value ?? ""))
-    .concat(String(diagnostics ?? ""))
+    .concat(typeof diagnostics === "string" ? diagnostics : String(diagnostics?.text ?? ""))
     .join("\n");
   const code =
     output.match(/<Code>\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\s*<\/Code>/i)?.[1] ??
@@ -365,12 +365,20 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
     status ? `HTTP ${status}` : null,
     code ? `COS 错误码 ${code}` : null,
   ].filter(Boolean);
+  if (details.length === 0 && typeof diagnostics === "object" && diagnostics !== null) {
+    details.push(
+      diagnostics.files === 0
+        ? "coscli 未生成文件级错误日志"
+        : `已扫描 ${diagnostics.files} 个临时日志（${diagnostics.bytes} 字节），未提取到安全错误码`,
+    );
+  }
   return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
 }
 
 export async function readCoscliDiagnostics(directory) {
-  if (!directory) return "";
+  if (!directory) return { text: "", files: 0, bytes: 0 };
   const chunks = [];
+  let filesRead = 0;
   let bytesRead = 0;
   const pendingDirectories = [{ path: directory, depth: 0 }];
   while (pendingDirectories.length > 0 && bytesRead < 4 * 1024 * 1024) {
@@ -394,13 +402,14 @@ export async function readCoscliDiagnostics(directory) {
         if (info.size > 1024 * 1024 || bytesRead + info.size > 4 * 1024 * 1024) continue;
         const content = await readFile(filePath, "utf8");
         chunks.push(content);
+        filesRead += 1;
         bytesRead += info.size;
       } catch {
         // Diagnostic logs are optional; never replace the upload error with a log-read error.
       }
     }
   }
-  return chunks.join("\n");
+  return { text: chunks.join("\n"), files: filesRead, bytes: bytesRead };
 }
 
 async function runCoscli(binary, args, cwd, diagnosticDirectory) {
