@@ -14,6 +14,7 @@ import {
   mimeTypeFor,
   requestHeadersFor,
   rewriteRootAssetReferences,
+  summarizeCoscliFailure,
   validateManifest,
 } from "./cos-assets.mjs";
 
@@ -108,4 +109,18 @@ test("发布校验要求真实跨域 GET、正确 MIME、immutable 缓存和字�
     bytes,
   }), /Access-Control-Allow-Origin/);
   assert.throws(() => assertAssetResponse({ response: ok, asset, bytes: Buffer.from("wrong") }), /哈希不一致/);
+});
+
+test("coscli 错误诊断只暴露可识别错误码与状态，不回显原始内容", () => {
+  const message = summarizeCoscliFailure({
+    status: 1,
+    stdout: "upload failed: synthetic-secret-value",
+    stderr: "runner diagnostic synthetic-secret-value",
+  }, "cp", "<Error><Code>AccessDenied</Code><Message>synthetic-secret-value</Message><HTTPStatus>403</HTTPStatus></Error>");
+
+  assert.match(message, /coscli cp 失败/);
+  assert.match(message, /HTTP 403/);
+  assert.match(message, /COS 错误码 AccessDenied/);
+  assert.match(message, /原始输出已隐藏/);
+  assert.doesNotMatch(message, /synthetic-secret-value|<Message>|upload failed/);
 });

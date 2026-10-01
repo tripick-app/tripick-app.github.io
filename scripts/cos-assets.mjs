@@ -347,7 +347,55 @@ async function assertPublicCorsRead() {
   }
 }
 
-function runCoscli(binary, args, cwd) {
+export function summarizeCoscliFailure(result, command = "命令", diagnostics = "") {
+  const output = [result?.stdout, result?.stderr]
+    .map((value) => Buffer.isBuffer(value) ? value.toString("utf8") : String(value ?? ""))
+    .concat(String(diagnostics ?? ""))
+    .join("\n");
+  const code =
+    output.match(/<Code>\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\s*<\/Code>/i)?.[1] ??
+    output.match(/\b(?:COS\s+)?(?:ErrorCode|Code)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\b/i)?.[1];
+  const status =
+    output.match(/\bHTTP(?:\/\d(?:\.\d)?)?\s*[: ]?\s*(\d{3})\b/i)?.[1] ??
+    output.match(/<HTTPStatus>\s*(\d{3})\s*<\/HTTPStatus>/i)?.[1] ??
+    output.match(/\b(?:StatusCode|HTTPStatus|status(?:\s*code)?)\s*[:=]\s*(\d{3})\b/i)?.[1];
+  const errorCode = /^[A-Z0-9_]{1,24}$/.test(result?.error?.code ?? "") ? result.error.code : null;
+  const details = [
+    errorCode ? `本地错误码 ${errorCode}` : null,
+    status ? `HTTP ${status}` : null,
+    code ? `COS 错误码 ${code}` : null,
+  ].filter(Boolean);
+  return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
+}
+
+async function readCoscliDiagnostics(directory) {
+  if (!directory) return "";
+  let entries;
+  try {
+    entries = await readdir(directory, { withFileTypes: true });
+  } catch {
+    return "";
+  }
+
+  const chunks = [];
+  let bytesRead = 0;
+  for (const entry of entries) {
+    if (!entry.isFile() || bytesRead >= 4 * 1024 * 1024) continue;
+    const filePath = path.join(directory, entry.name);
+    try {
+      const info = await stat(filePath);
+      if (info.size > 1024 * 1024 || bytesRead + info.size > 4 * 1024 * 1024) continue;
+      const content = await readFile(filePath, "utf8");
+      chunks.push(content);
+      bytesRead += info.size;
+    } catch {
+      // Diagnostic logs are optional; never replace the upload error with a log-read error.
+    }
+  }
+  return chunks.join("\n");
+}
+
+async function runCoscli(binary, args, cwd, diagnosticDirectory) {
   let result;
   try {
     result = spawnSync(binary, args, {
@@ -361,8 +409,8 @@ function runCoscli(binary, args, cwd) {
     throw new Error("启动 coscli 失败；已隐藏命令输出，检查 runner 上的 coscli 安装。");
   }
   if (result.error || result.status !== 0) {
-    // Keep raw CLI output hidden; the caller gets a concise failure without runner details.
-    throw new Error(`coscli ${args[0]} 失败（退出码 ${result.status ?? "unknown"}）；输出已隐藏。`);
+    const diagnostics = await readCoscliDiagnostics(diagnosticDirectory);
+    throw new Error(summarizeCoscliFailure(result, args[0], diagnostics));
   }
 }
 
@@ -430,16 +478,18 @@ async function uploadManifest(root, manifest) {
 
       const localPath = path.join(distDir, ...asset.path.split("/"));
       const meta = `Content-Type:${asset.contentType}#Cache-Control:${asset.cacheControl}#x-cos-meta-sha256:${asset.sha256}`;
-      runCoscli(credentials.binary, [
+      await runCoscli(credentials.binary, [
         "cp", localPath, `cos://${COS_BUCKET}/${asset.key}`,
         "--config-path", credentials.configPath,
         "--protocol", "https",
         "--init-skip",
         "--disable-log",
         "--log-path", credentials.logPath,
+        "--process-log-path", credentials.logPath,
+        "--fail-output-path", credentials.logPath,
         "--forbid-overwrite",
         "--meta", meta,
-      ], root);
+      ], root, credentials.logPath);
     }
     await verifyManifest(manifest);
   } finally {
