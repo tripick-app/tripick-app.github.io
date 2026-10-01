@@ -19,7 +19,7 @@ export async function downloadCoscli({
   expectedSha256 = COSCLI_LINUX_AMD64_SHA256,
 } = {}) {
   if (platform !== "linux" || arch !== "x64") {
-    throw new Error("COSCLI 安装器目前只支持 GitHub Actions ubuntu-latest x64 runner。");
+    throw new Error("COSCLI 安装器目前只支持 GitHub Actions ubuntu-24.04 x64 runner。");
   }
   if (!destination || !path.isAbsolute(destination)) {
     throw new Error("COSCLI 安装目标必须是绝对路径。");

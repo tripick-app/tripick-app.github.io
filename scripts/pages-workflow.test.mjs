@@ -35,3 +35,17 @@ test("流水线只引用已配置的组织Secrets名称，不回显值", async (
   assert.match(authStep, /TRIPICK_COS_SECRET_KEY:\s*\$\{\{ secrets\.TRIPICK_COS_SECRET_KEY \}\}/);
   assert.match(authStep, /scripts\/cos-auth-config\.mjs prepare/);
 });
+
+
+test("本地与CI统一使用Node 24 LTS和固定Ubuntu runner", async () => {
+  const workflow = await readFile(workflowPath, "utf8");
+  const nodeVersion = (await readFile(new URL("../.nvmrc", import.meta.url), "utf8")).trim();
+  const packageJson = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+
+  assert.equal(nodeVersion, "24.21.0");
+  assert.equal(packageJson.engines.node, ">=24.21.0 <25");
+  assert.match(workflow, /runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /uses: actions\/setup-node@v7/);
+  assert.match(workflow, /node-version-file: \.nvmrc/);
+  assert.doesNotMatch(workflow, /node-version: 22/);
+});
