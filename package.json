@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "build:cos": "node scripts/cos-assets.mjs build",
+    "cos:upload": "node scripts/cos-assets.mjs upload",
+    "cos:verify": "node scripts/cos-assets.mjs verify",
+    "test:cos": "node --test scripts/cos-assets.test.mjs scripts/cos-auth-config.test.mjs scripts/install-coscli.test.mjs scripts/pages-workflow.test.mjs"
   },
   "dependencies": {
     "motion": "13.4.4",
