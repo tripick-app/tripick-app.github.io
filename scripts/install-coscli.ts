@@ -11,13 +11,22 @@ export const COSCLI_LINUX_AMD64_URL =
 export const COSCLI_LINUX_AMD64_SHA256 =
   "a07de5ba2800147a700ed29036b0c76a4229088cee68e1682d0eae19b638a915";
 
+type FetchBinary = (url: string, init?: RequestInit) => Promise<Response>;
+type DownloadOptions = {
+  destination: string;
+  platform?: NodeJS.Platform;
+  arch?: string;
+  fetchImpl?: FetchBinary;
+  expectedSha256?: string;
+};
+
 export async function downloadCoscli({
   destination,
   platform = process.platform,
   arch = process.arch,
   fetchImpl = globalThis.fetch,
   expectedSha256 = COSCLI_LINUX_AMD64_SHA256,
-} = {}) {
+}: DownloadOptions): Promise<string> {
   if (platform !== "linux" || arch !== "x64") {
     throw new Error("COSCLI 安装器目前只支持 GitHub Actions ubuntu-24.04 x64 runner。");
   }
@@ -45,7 +54,7 @@ export async function downloadCoscli({
   return destination;
 }
 
-async function main() {
+async function main(): Promise<void> {
   const runnerTemp = process.env.RUNNER_TEMP;
   const githubPath = process.env.GITHUB_PATH;
   const githubEnv = process.env.GITHUB_ENV;
@@ -63,7 +72,7 @@ async function main() {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`COSCLI 安装失败：${error.message}`);
+    console.error(`COSCLI 安装失败：${error instanceof Error ? error.message : "未知错误"}`);
     process.exitCode = 1;
   });
 }

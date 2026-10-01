@@ -11,6 +11,9 @@ import {
   COS_REGION,
   SITE_ORIGIN,
   assertAssetResponse,
+  classifyFetchFailure,
+  headWithBoundedRetry,
+  isRetryableFetchFailure,
   assertSafeAssetPath,
   assetBaseForRelease,
   makeAssetRecord,
@@ -20,7 +23,7 @@ import {
   rewriteRootAssetReferences,
   summarizeCoscliFailure,
   validateManifest,
-} from "./cos-assets.mjs";
+} from "./cos-assets.ts";
 
 const releaseId = "ab".repeat(20);
 
@@ -33,10 +36,66 @@ test("版本 URL 固定到站点专用前缀和不可变 commit SHA", () => {
 });
 
 test("GET-only CORS：跨域 GET 带 Origin，预上传 HEAD 不带 Origin", () => {
-  assert.deepEqual(requestHeadersFor("GET", { cors: true }), { Origin: SITE_ORIGIN });
-  const headHeaders = requestHeadersFor("HEAD", { headers: { Origin: "https://wrong.example" } });
-  assert.equal(Object.keys(headHeaders).some((name) => name.toLowerCase() === "origin"), false);
+  assert.equal(new Headers(requestHeadersFor("GET", { cors: true })).get("origin"), SITE_ORIGIN);
+  const headHeaders = new Headers(requestHeadersFor("HEAD", { headers: { Origin: "https://wrong.example" } }));
+  assert.equal(headHeaders.has("origin"), false);
   assert.throws(() => requestHeadersFor("HEAD", { cors: true }), /只使用 GET/);
+});
+
+
+test("HEAD只对超时/连接重置与可重试5xx做有界指数退避", async () => {
+  const waits: number[] = [];
+  const statuses = [503, 502, 404];
+  let requests = 0;
+  const response = await headWithBoundedRetry(
+    "https://example.invalid/assets/example.js",
+    async (_url, options) => {
+      assert.equal(options.method, "HEAD");
+      requests += 1;
+      const status = statuses.shift();
+      if (status === undefined) throw new Error("unexpected request");
+      return new Response(null, { status });
+    },
+    async (milliseconds) => { waits.push(milliseconds); },
+  );
+  assert.equal(response.status, 404);
+  assert.equal(requests, 3);
+  assert.deepEqual(waits, [250, 500]);
+
+  let deniedRequests = 0;
+  const deniedWaits: number[] = [];
+  const denied = await headWithBoundedRetry(
+    "https://example.invalid/assets/private.js",
+    async () => { deniedRequests += 1; return new Response(null, { status: 403 }); },
+    async (milliseconds) => { deniedWaits.push(milliseconds); },
+  );
+  assert.equal(denied.status, 403);
+  assert.equal(deniedRequests, 1);
+  assert.deepEqual(deniedWaits, []);
+});
+
+test("HEAD连接重置分类只暴露白名单错误码，不回显底层文本", async () => {
+  const reset = Object.assign(new Error("sensitive synthetic detail"), { code: "ECONNRESET" });
+  const failure = Object.assign(new Error("fetch failed"), { cause: reset });
+  assert.equal(classifyFetchFailure(failure), "网络连接重置（ECONNRESET）");
+  assert.equal(isRetryableFetchFailure(failure), true);
+  assert.equal(isRetryableFetchFailure(new Error("sensitive synthetic detail")), false);
+  assert.equal(classifyFetchFailure(new Error("sensitive synthetic detail")), "Fetch网络错误（无可用的白名单系统错误码）");
+
+  let requests = 0;
+  const waits: number[] = [];
+  const response = await headWithBoundedRetry(
+    "https://example.invalid/assets/retry.js",
+    async () => {
+      requests += 1;
+      if (requests === 1) throw failure;
+      return new Response(null, { status: 404 });
+    },
+    async (milliseconds) => { waits.push(milliseconds); },
+  );
+  assert.equal(response.status, 404);
+  assert.equal(requests, 2);
+  assert.deepEqual(waits, [250]);
 });
 
 test("只重写根 /assets/ 引用，不重复改写完整 COS URL 或嵌套路径", () => {
@@ -80,7 +139,7 @@ test("资源清单拒绝跨桶、跨前缀、重复和不完整项目", () => {
     assets: [asset],
   };
 
-  assert.equal(validateManifest(manifest), manifest);
+  assert.deepEqual(validateManifest(manifest), manifest);
   assert.throws(() => validateManifest({ ...manifest, bucket: "another-bucket" }), /不匹配/);
   assert.throws(() => validateManifest({ ...manifest, assets: [{ ...asset, key: "other/assets/a" }] }), /清单资产校验失败/);
   assert.throws(() => validateManifest({ ...manifest, assets: [asset, asset] }), /重复/);

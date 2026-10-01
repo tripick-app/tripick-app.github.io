@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { spawnSync } from "node:child_process";
+import { spawnSync, type SpawnSyncOptions } from "node:child_process";
 import { appendFile, chmod, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +9,29 @@ export const COS_BUCKET = "s-1307850796";
 export const COS_REGION = "ap-beijing";
 export const AUTH_DIR_PREFIX = "tripick-cos-auth-";
 
-export function authPaths({ runnerTemp, runId, runAttempt }) {
+export type CoscliAuthConfig = {
+  cos: {
+    base: {
+      secretid: string;
+      secretkey: string;
+      sessiontoken: string;
+      protocol: "https";
+      disableencryption: "true";
+    };
+    buckets: Array<{ name: string; alias: string; region: string }>;
+  };
+};
+
+type AuthPaths = { directory: string; configPath: string; logPath: string };
+type AuthEnvironment = NodeJS.ProcessEnv;
+type SpawnResult = { status: number | null; error?: NodeJS.ErrnoException | null };
+type SpawnLike = (command: string, args: string[], options: SpawnSyncOptions) => SpawnResult;
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "";
+}
+
+export function authPaths({ runnerTemp, runId, runAttempt }: { runnerTemp: string | undefined; runId: string | undefined; runAttempt: string | undefined }): AuthPaths {
   if (!runnerTemp || !path.isAbsolute(runnerTemp) || /[\r\n]/.test(runnerTemp)) {
     throw new Error("RUNNER_TEMP 必须是安全的绝对路径。");
   }
@@ -30,7 +52,7 @@ export function authPaths({ runnerTemp, runId, runAttempt }) {
   };
 }
 
-function validateCoscliConfig(binary, configPath, logPath, cwd, env, spawn) {
+function validateCoscliConfig(binary: string, configPath: string, logPath: string, cwd: string, env: AuthEnvironment, spawn: SpawnLike): void {
   let result;
   try {
     result = spawn(binary, [
@@ -59,7 +81,7 @@ function validateCoscliConfig(binary, configPath, logPath, cwd, env, spawn) {
 export async function prepareCoscliAuth({
   env = process.env,
   spawn = spawnSync,
-} = {}) {
+}: { env?: AuthEnvironment; spawn?: SpawnLike } = {}): Promise<Pick<AuthPaths, "directory" | "configPath">> {
   const secretId = env.TRIPICK_COS_SECRET_ID;
   const secretKey = env.TRIPICK_COS_SECRET_KEY;
   if (!secretId || !secretKey) {
@@ -81,7 +103,7 @@ export async function prepareCoscliAuth({
     await chmod(directory, 0o700);
     await mkdir(logPath, { mode: 0o700 });
     const privateEnv = { ...env, HOME: directory };
-    const configContents = JSON.stringify({
+    const config: CoscliAuthConfig = {
       // COSCLI v1.0.9 unmarshals configuration from the top-level "cos" key.
       cos: {
         base: {
@@ -97,7 +119,8 @@ export async function prepareCoscliAuth({
           region: COS_REGION,
         }],
       },
-    });
+    };
+    const configContents = JSON.stringify(config);
     await writeFile(configPath, `${configContents}\n`, { mode: 0o600, flag: "wx" });
     await chmod(configPath, 0o600);
 
@@ -118,12 +141,13 @@ export async function prepareCoscliAuth({
       { mode: 0o600 },
     );
     return { directory, configPath };
-  } catch (error) {
+  } catch (error: unknown) {
     await rm(directory, { recursive: true, force: true });
+    const message = errorMessage(error);
     if (
-      error?.message === "COSCLI 配置校验失败；命令输出已隐藏。" ||
-      error?.message === "COSCLI 配置文件权限不安全。" ||
-      error?.message === "GITHUB_ENV 不可用；没有导出认证配置路径。"
+      message === "COSCLI 配置校验失败；命令输出已隐藏。" ||
+      message === "COSCLI 配置文件权限不安全。" ||
+      message === "GITHUB_ENV 不可用；没有导出认证配置路径。"
     ) {
       throw error;
     }
@@ -131,7 +155,7 @@ export async function prepareCoscliAuth({
   }
 }
 
-export async function cleanupCoscliAuth({ env = process.env } = {}) {
+export async function cleanupCoscliAuth({ env = process.env }: { env?: AuthEnvironment } = {}): Promise<boolean> {
   const rootValue = env.RUNNER_TEMP;
   const directoryValue = env.TRIPICK_COSCLI_CONFIG_DIR;
   if (!directoryValue) return false;
@@ -155,7 +179,7 @@ export async function cleanupCoscliAuth({ env = process.env } = {}) {
   return true;
 }
 
-async function main() {
+async function main(): Promise<void> {
   const command = process.argv[2];
   if (command === "prepare") {
     await prepareCoscliAuth();
@@ -167,12 +191,12 @@ async function main() {
     console.log(removed ? "COSCLI 临时认证文件已清理。" : "没有待清理的 COSCLI 认证文件。");
     return;
   }
-  throw new Error("用法：node scripts/cos-auth-config.mjs <prepare|cleanup>");
+  throw new Error("用法：node scripts/cos-auth-config.ts <prepare|cleanup>");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`COSCLI 认证步骤失败：${error.message}`);
+    console.error(`COSCLI 认证步骤失败：${error instanceof Error ? error.message : "未知错误"}`);
     process.exitCode = 1;
   });
 }

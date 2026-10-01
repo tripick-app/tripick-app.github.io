@@ -6,15 +6,17 @@ const workflowPath = new URL("../.github/workflows/pages.yml", import.meta.url);
 
 test("Pages发布先完成COS测试、构建、上传校验，成功后才部署HTML", async () => {
   const workflow = await readFile(workflowPath, "utf8");
+  const typecheckIndex = workflow.indexOf("run: pnpm typecheck");
   const testIndex = workflow.indexOf("run: pnpm test:cos");
   const buildIndex = workflow.indexOf("run: pnpm build:cos");
-  const authIndex = workflow.indexOf("run: node scripts/cos-auth-config.mjs prepare");
+  const authIndex = workflow.indexOf("run: node scripts/cos-auth-config.ts prepare");
   const uploadIndex = workflow.indexOf("run: pnpm cos:upload");
-  const cleanupIndex = workflow.indexOf("run: node scripts/cos-auth-config.mjs cleanup");
+  const cleanupIndex = workflow.indexOf("run: node scripts/cos-auth-config.ts cleanup");
   const pagesArtifactIndex = workflow.indexOf("uses: actions/upload-pages-artifact@");
   const deployIndex = workflow.indexOf("uses: actions/deploy-pages@");
 
-  assert.ok(testIndex >= 0);
+  assert.ok(typecheckIndex >= 0);
+  assert.ok(typecheckIndex < testIndex);
   assert.ok(testIndex < buildIndex);
   assert.ok(buildIndex < authIndex);
   assert.ok(authIndex < uploadIndex);
@@ -33,7 +35,7 @@ test("流水线只引用已配置的组织Secrets名称，不回显值", async (
   const authStep = workflow.slice(authStart, authEnd);
   assert.match(authStep, /TRIPICK_COS_SECRET_ID:\s*\$\{\{ secrets\.TRIPICK_COS_SECRET_ID \}\}/);
   assert.match(authStep, /TRIPICK_COS_SECRET_KEY:\s*\$\{\{ secrets\.TRIPICK_COS_SECRET_KEY \}\}/);
-  assert.match(authStep, /scripts\/cos-auth-config\.mjs prepare/);
+  assert.match(authStep, /scripts\/cos-auth-config\.ts prepare/);
 });
 
 

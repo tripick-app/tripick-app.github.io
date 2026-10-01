@@ -6,12 +6,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build --configLoader runner",
     "preview": "vite preview --host 0.0.0.0",
-    "build:cos": "node scripts/cos-assets.mjs build",
-    "cos:upload": "node scripts/cos-assets.mjs upload",
-    "cos:verify": "node scripts/cos-assets.mjs verify",
-    "test:cos": "node --test scripts/cos-assets.test.mjs scripts/cos-auth-config.test.mjs scripts/install-coscli.test.mjs scripts/pages-workflow.test.mjs"
+    "typecheck": "tsc --noEmit",
+    "build:cos": "node scripts/cos-assets.ts build",
+    "cos:upload": "node scripts/cos-assets.ts upload",
+    "cos:verify": "node scripts/cos-assets.ts verify",
+    "test:cos": "node --test scripts/cos-assets.test.ts scripts/cos-auth-config.test.ts scripts/install-coscli.test.ts scripts/pages-workflow.test.ts"
   },
   "dependencies": {
     "motion": "13.4.4",
@@ -19,7 +20,11 @@
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^5.9.3",
     "vite": "^8.3.1"
   },
   "engines": {

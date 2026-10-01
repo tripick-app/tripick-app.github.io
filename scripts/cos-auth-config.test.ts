@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { SpawnSyncOptions } from "node:child_process";
 import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -9,14 +10,15 @@ import {
   authPaths,
   cleanupCoscliAuth,
   prepareCoscliAuth,
-} from "./cos-auth-config.mjs";
+} from "./cos-auth-config.ts";
+import type { CoscliAuthConfig } from "./cos-auth-config.ts";
 
 test("认证配置只在runner临时目录中创建，密钥不进入CLI参数", async () => {
   const runnerTemp = await mkdtemp(path.join(os.tmpdir(), "tripick-auth-test-"));
   const githubEnv = path.join(runnerTemp, "github-env");
   const idFixture = "synthetic-id-for-test";
   const keyFixture = 'synthetic-"key"-for-test';
-  const calls = [];
+  const calls: Array<{ args: string[]; options: SpawnSyncOptions }> = [];
   const env = {
     TRIPICK_COS_SECRET_ID: idFixture,
     TRIPICK_COS_SECRET_KEY: keyFixture,
@@ -42,7 +44,7 @@ test("认证配置只在runner临时目录中创建，密钥不进入CLI参数",
     assert.ok(!calls[0].args.includes(keyFixture));
     assert.equal(calls[0].options.stdio, "ignore");
 
-    const config = JSON.parse(await readFile(result.configPath, "utf8"));
+    const config = JSON.parse(await readFile(result.configPath, "utf8")) as CoscliAuthConfig;
     assert.deepEqual(Object.keys(config), ["cos"]);
     assert.equal(config.cos.base.secretid, idFixture);
     assert.equal(config.cos.base.secretkey, keyFixture);

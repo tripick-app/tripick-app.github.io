@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
+import type { Variants } from "motion/react";
 import * as m from "motion/react-m";
 
-const copy = {
-  zh: {
+type Language = "zh" | "en";
+
+const zhCopy = {
     pageTitle: "Tripick — 让每段旅程，都留下几张想回看的照片。",
     description: "Tripick 在 iPhone 本地整理旅程照片。按拍摄时间与可用的地点信息归拢，再由你复核和确认。",
     heroImageAlt: "夕阳照亮海面、山坡与海岸村庄的旅行风景",
@@ -48,7 +50,11 @@ const copy = {
     closingLineTwo: "更容易被找回来。",
     closingAction: "了解 Tripick 如何整理",
     footerNote: "页面中的风景照片均为生成示例，不来自真实用户相册。",
-  },
+};
+type SiteCopy = { [Key in keyof typeof zhCopy]: string };
+
+const copy = {
+  zh: zhCopy,
   en: {
     pageTitle: "Tripick — A few photos from every trip, worth revisiting.",
     description: "Tripick organizes trip photos on your iPhone by capture time and available location, then lets you review and confirm your picks.",
@@ -96,7 +102,9 @@ const copy = {
     closingAction: "See how Tripick organizes photos",
     footerNote: "Travel photos on this page are generated examples, not images from real users.",
   },
-};
+} satisfies Record<Language, SiteCopy>;
+
+type ImageAsset = { src: string; srcSet: string; placeholder: string | null; width: number; height: number };
 
 const imageAssets = {
   coast: {
@@ -134,10 +142,9 @@ const imageAssets = {
     width: 916,
     height: 1717,
   },
-};
+} satisfies Record<string, ImageAsset>;
 
-
-const heroRiseVariants = {
+const heroRiseVariants: Variants = {
   hidden: { opacity: 1, y: 16 },
   visible: {
     opacity: 1,
@@ -145,16 +152,16 @@ const heroRiseVariants = {
     transition: { duration: 0.76, ease: [0.16, 1, 0.3, 1] },
   },
 };
-const heroStaggerVariants = {
+const heroStaggerVariants: Variants = {
   hidden: {},
   visible: { transition: { delayChildren: 0.12, staggerChildren: 0.18 } },
 };
-const heroLineStaggerVariants = {
+const heroLineStaggerVariants: Variants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.11 } },
 };
 
-function getInitialLanguage() {
+function getInitialLanguage(): Language {
   try {
     return window.localStorage.getItem("tripick-language") === "en" ? "en" : "zh";
   } catch {
@@ -162,10 +169,27 @@ function getInitialLanguage() {
   }
 }
 
-function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", priority = false, decorative = false }) {
+type ResponsivePhotoProps = {
+  name: keyof typeof imageAssets;
+  alt: string;
+  className?: string;
+  sizes?: string;
+  loading?: ImgHTMLAttributes<HTMLImageElement>["loading"];
+  priority?: boolean;
+  decorative?: boolean;
+};
+
+type PhotoStyle = CSSProperties & { "--photo-placeholder": string };
+
+type PhotoStatus = "loading" | "loaded" | "error";
+
+function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", priority = false, decorative = false }: ResponsivePhotoProps) {
   const image = imageAssets[name];
-  const imageRef = useRef(null);
-  const [status, setStatus] = useState("loading");
+  const imageRef = useRef<HTMLImageElement>(null);
+  const pictureStyle: PhotoStyle = {
+    "--photo-placeholder": image.placeholder ? `url("${image.placeholder}")` : "none",
+  };
+  const [status, setStatus] = useState<PhotoStatus>("loading");
 
   useEffect(() => {
     const element = imageRef.current;
@@ -175,7 +199,7 @@ function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", p
   return (
     <picture
       className={`photo-media ${className} is-${status}`}
-      style={{ "--photo-placeholder": image.placeholder ? `url("${image.placeholder}")` : "none" }}
+      style={pictureStyle}
       aria-hidden={decorative || undefined}
     >
       <source type="image/webp" srcSet={image.srcSet} sizes={sizes} />

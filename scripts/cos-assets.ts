@@ -27,6 +27,45 @@ export const CORS_PROBE_KEY = "tripick-privacy/latest/index.html";
 const EXPECTED_COS_ORIGIN = `https://${COS_HOST}`;
 const SUPPORTED_TEXT_FILE = /\.(?:html|css|js|mjs|json|txt|map)$/i;
 
+export type AssetRecord = {
+  path: string;
+  key: string;
+  url: string;
+  size: number;
+  sha256: string;
+  contentType: string;
+  cacheControl: string;
+};
+
+export type ReleaseManifest = {
+  version: 1;
+  releaseId: string;
+  bucket: string;
+  region: string;
+  origin: string;
+  siteOrigin: string;
+  releasePrefix: string;
+  assetBase: string;
+  cacheControl: string;
+  assets: AssetRecord[];
+};
+
+type CoscliCommandResult = {
+  status: number | null;
+  error?: NodeJS.ErrnoException | null;
+  stdout?: string | Buffer | null;
+  stderr?: string | Buffer | null;
+};
+
+type DirectoryEntry = { path: string; depth: number };
+
+type CorsFetchOptions = RequestInit & { cors?: boolean };
+type HeadRequest = (url: string, options: RequestInit) => Promise<Response>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 const MIME_TYPES = new Map([
   [".css", "text/css"],
   [".html", "text/html"],
@@ -42,32 +81,32 @@ const MIME_TYPES = new Map([
   [".woff2", "font/woff2"],
 ]);
 
-export function assetBaseForRelease(releaseId) {
+export function assetBaseForRelease(releaseId: string): string {
   const safeReleaseId = assertReleaseId(releaseId);
   return `${EXPECTED_COS_ORIGIN}/${ASSET_ROOT}/${safeReleaseId}/`;
 }
 
-export function assertReleaseId(releaseId) {
-  if (!/^[a-f0-9]{40}$/i.test(releaseId ?? "")) {
+export function assertReleaseId(releaseId: string | null | undefined): string {
+  if (typeof releaseId !== "string" || !/^[a-f0-9]{40}$/i.test(releaseId)) {
     throw new Error("发布标识必须是完整的 40 位 Git commit SHA。");
   }
   return releaseId.toLowerCase();
 }
 
-export function mimeTypeFor(relativePath) {
+export function mimeTypeFor(relativePath: string): string {
   return MIME_TYPES.get(path.posix.extname(relativePath).toLowerCase()) ?? "application/octet-stream";
 }
 
-export function rewriteRootAssetReferences(source, assetBase) {
+export function rewriteRootAssetReferences(source: string, assetBase: string): string {
   if (!assetBase.endsWith("/")) {
     throw new Error("COS 资源根 URL 必须以 / 结尾。");
   }
   // Vite's `base` handles generated entry points and chunks. This catches the
   // site's public/ assets referenced from React strings, HTML preloads and CSS.
-  return source.replace(/(^|[^A-Za-z0-9_./:-])\/assets\//g, (_match, boundary) => `${boundary}${assetBase}assets/`);
+  return source.replace(/(^|[^A-Za-z0-9_./:-])\/assets\//g, (_match: string, boundary: string) => `${boundary}${assetBase}assets/`);
 }
 
-export function makeAssetRecord(relativePath, contents, releaseId) {
+export function makeAssetRecord(relativePath: string, contents: Uint8Array, releaseId: string): AssetRecord {
   releaseId = assertReleaseId(releaseId);
   const safePath = assertSafeAssetPath(relativePath);
   const key = `${ASSET_ROOT}/${releaseId}/` + safePath;
@@ -82,7 +121,7 @@ export function makeAssetRecord(relativePath, contents, releaseId) {
   };
 }
 
-export function assertSafeAssetPath(relativePath) {
+export function assertSafeAssetPath(relativePath: string): string {
   const normalized = String(relativePath ?? "").replaceAll("\\", "/");
   if (
     !normalized.startsWith("assets/") ||
@@ -95,52 +134,98 @@ export function assertSafeAssetPath(relativePath) {
   return normalized;
 }
 
-export function validateManifest(manifest) {
-  const releaseId = assertReleaseId(manifest?.releaseId);
+export function validateManifest(value: unknown): ReleaseManifest {
+  if (!isRecord(value)) throw new Error("资源清单格式无效。");
+  if (typeof value.releaseId !== "string") throw new Error("资源清单缺少发布标识。");
+
+  const releaseId = assertReleaseId(value.releaseId);
   const expectedBase = assetBaseForRelease(releaseId);
   const expectedPrefix = `${ASSET_ROOT}/${releaseId}/`;
   if (
-    manifest.version !== 1 ||
-    manifest.bucket !== COS_BUCKET ||
-    manifest.region !== COS_REGION ||
-    manifest.origin !== EXPECTED_COS_ORIGIN ||
-    manifest.assetBase !== expectedBase ||
-    manifest.siteOrigin !== SITE_ORIGIN ||
-    !Array.isArray(manifest.assets) ||
-    manifest.assets.length === 0
+    value.version !== 1 ||
+    value.bucket !== COS_BUCKET ||
+    value.region !== COS_REGION ||
+    value.origin !== EXPECTED_COS_ORIGIN ||
+    value.assetBase !== expectedBase ||
+    value.siteOrigin !== SITE_ORIGIN ||
+    value.releasePrefix !== expectedPrefix ||
+    value.cacheControl !== CACHE_CONTROL ||
+    !Array.isArray(value.assets) ||
+    value.assets.length === 0
   ) {
     throw new Error("资源清单与固定 COS 目标不匹配或清单为空。");
   }
 
-  const seen = new Set();
-  for (const asset of manifest.assets) {
-    const safePath = assertSafeAssetPath(asset.path);
+  const seen = new Set<string>();
+  const assets: AssetRecord[] = [];
+  const rawAssets: unknown[] = value.assets;
+  for (const rawAsset of rawAssets) {
+    if (
+      !isRecord(rawAsset) ||
+      typeof rawAsset.path !== "string" ||
+      typeof rawAsset.key !== "string" ||
+      typeof rawAsset.url !== "string" ||
+      typeof rawAsset.size !== "number" ||
+      typeof rawAsset.sha256 !== "string" ||
+      typeof rawAsset.contentType !== "string" ||
+      typeof rawAsset.cacheControl !== "string"
+    ) {
+      throw new Error("资源清单资产字段无效。");
+    }
+
+    const safePath = assertSafeAssetPath(rawAsset.path);
     const expectedKey = `${expectedPrefix}${safePath}`;
     if (seen.has(safePath)) throw new Error(`清单中存在重复资源：${safePath}`);
+    const asset: AssetRecord = {
+      path: safePath,
+      key: rawAsset.key,
+      url: rawAsset.url,
+      size: rawAsset.size,
+      sha256: rawAsset.sha256,
+      contentType: rawAsset.contentType,
+      cacheControl: rawAsset.cacheControl,
+    };
     if (
       asset.key !== expectedKey ||
       asset.url !== `${EXPECTED_COS_ORIGIN}/${expectedKey}` ||
       !Number.isSafeInteger(asset.size) ||
       asset.size < 0 ||
-      !/^[a-f0-9]{64}$/.test(asset.sha256 ?? "") ||
+      !/^[a-f0-9]{64}$/.test(asset.sha256) ||
       asset.contentType !== mimeTypeFor(safePath) ||
       asset.cacheControl !== CACHE_CONTROL
     ) {
-      throw new Error(`清单资产校验失败：${asset.path}`);
+      throw new Error(`清单资产校验失败：${safePath}`);
     }
     seen.add(safePath);
+    assets.push(asset);
   }
-  return manifest;
+
+  return {
+    version: 1,
+    releaseId,
+    bucket: COS_BUCKET,
+    region: COS_REGION,
+    origin: EXPECTED_COS_ORIGIN,
+    siteOrigin: SITE_ORIGIN,
+    releasePrefix: expectedPrefix,
+    assetBase: expectedBase,
+    cacheControl: CACHE_CONTROL,
+    assets,
+  };
 }
 
-export function assertCorsHeaders(response, context = "COS GET") {
+export function assertCorsHeaders(response: Response, context = "COS GET"): void {
   const allowOrigin = response.headers.get("access-control-allow-origin");
   if (allowOrigin !== SITE_ORIGIN) {
     throw new Error(`${context} 未返回 Access-Control-Allow-Origin: ${SITE_ORIGIN}。`);
   }
 }
 
-export function assertAssetResponse({ response, asset, bytes }) {
+export function assertAssetResponse({
+  response,
+  asset,
+  bytes,
+}: { response: Response; asset: AssetRecord; bytes: Uint8Array }): void {
   if (response.status !== 200) {
     throw new Error(`${asset.path} 返回 HTTP ${response.status}，预期 200。`);
   }
@@ -154,7 +239,7 @@ export function assertAssetResponse({ response, asset, bytes }) {
   const cacheDirectives = new Set(
     (response.headers.get("cache-control") ?? "")
       .split(",")
-      .map((part) => part.trim().toLowerCase())
+      .map((part: string) => part.trim().toLowerCase())
       .filter(Boolean),
   );
   if (!["public", "max-age=31536000", "immutable"].every((part) => cacheDirectives.has(part))) {
@@ -167,16 +252,16 @@ export function assertAssetResponse({ response, asset, bytes }) {
   }
 }
 
-export function manifestPathFor(root, releaseId) {
+export function manifestPathFor(root: string, releaseId: string): string {
   assertReleaseId(releaseId);
   return path.join(root, ".cos-release", `${releaseId}.json`);
 }
 
-export async function listAssetFiles(distDir) {
+export async function listAssetFiles(distDir: string): Promise<string[]> {
   const assetDir = path.join(distDir, "assets");
-  const files = [];
+  const files: string[] = [];
 
-  async function visit(currentDir) {
+  async function visit(currentDir: string): Promise<void> {
     const entries = await readdir(currentDir, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
@@ -196,8 +281,8 @@ export async function listAssetFiles(distDir) {
   return files;
 }
 
-async function rewriteDistTextAssets(distDir, assetBase) {
-  async function visit(currentDir) {
+async function rewriteDistTextAssets(distDir: string, assetBase: string): Promise<void> {
+  async function visit(currentDir: string): Promise<void> {
     const entries = await readdir(currentDir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(currentDir, entry.name);
@@ -217,12 +302,12 @@ async function rewriteDistTextAssets(distDir, assetBase) {
   await visit(distDir);
 }
 
-async function buildManifest(root, distDir, releaseId) {
+async function buildManifest(root: string, distDir: string, releaseId: string): Promise<{ manifest: ReleaseManifest; pathToManifest: string }> {
   const assetBase = assetBaseForRelease(releaseId);
   const paths = await listAssetFiles(distDir);
   if (paths.length === 0) throw new Error("dist/assets 为空，拒绝生成空资源清单。");
 
-  const assets = [];
+  const assets: AssetRecord[] = [];
   for (const fullPath of paths) {
     const relativePath = path.relative(distDir, fullPath).split(path.sep).join("/");
     const contents = await readFile(fullPath);
@@ -247,7 +332,7 @@ async function buildManifest(root, distDir, releaseId) {
   return { manifest, pathToManifest };
 }
 
-function getReleaseId(root) {
+function getReleaseId(root: string): string {
   const fromEnvironment = process.env.TRIPICK_RELEASE_ID ?? process.env.GITHUB_SHA;
   if (fromEnvironment) return assertReleaseId(fromEnvironment);
   try {
@@ -259,7 +344,7 @@ function getReleaseId(root) {
   throw new Error("请设置 TRIPICK_RELEASE_ID/GITHUB_SHA，或在 Git 仓库内运行命令。");
 }
 
-async function buildCos(root) {
+async function buildCos(root: string): Promise<void> {
   const releaseId = getReleaseId(root);
   const assetBase = assetBaseForRelease(releaseId);
   const distDir = path.join(root, "dist");
@@ -282,11 +367,11 @@ async function buildCos(root) {
   console.log("本命令只构建并生成清单，不联网、不读取凭据、不上传资源。");
 }
 
-async function readManifest(root) {
+async function readManifest(root: string): Promise<ReleaseManifest> {
   const releaseId = getReleaseId(root);
   const distDir = path.join(root, "dist");
   const manifestPath = manifestPathFor(root, releaseId);
-  const parsed = JSON.parse(await readFile(manifestPath, "utf8"));
+  const parsed: unknown = JSON.parse(await readFile(manifestPath, "utf8"));
   const manifest = validateManifest(parsed);
 
   for (const asset of manifest.assets) {
@@ -302,19 +387,62 @@ async function readManifest(root) {
   return manifest;
 }
 
-export function requestHeadersFor(method, { cors = false, headers = {} } = {}) {
+export function requestHeadersFor(
+  method: string | undefined,
+  { cors = false, headers = {} }: { cors?: boolean; headers?: HeadersInit } = {},
+): Record<string, string> {
   const normalizedMethod = String(method ?? "GET").toUpperCase();
   if (cors && normalizedMethod !== "GET") {
     throw new Error("COS 跨域校验只使用 GET；其他服务端探测不得附加 Origin。");
   }
-  const requestHeaders = Object.fromEntries(
-    Object.entries(headers).filter(([name]) => name.toLowerCase() !== "origin"),
-  );
-  if (cors) requestHeaders.Origin = SITE_ORIGIN;
+  const normalizedHeaders = new Headers(headers);
+  normalizedHeaders.delete("origin");
+  const requestHeaders: Record<string, string> = {};
+  normalizedHeaders.forEach((value, name) => {
+    requestHeaders[name] = value;
+  });
+  if (cors) requestHeaders.origin = SITE_ORIGIN;
   return requestHeaders;
 }
 
-async function fetchWithTimeout(url, options = {}) {
+export function classifyFetchFailure(error: unknown): string {
+  const knownCodes: Record<string, string> = {
+    EAI_AGAIN: "DNS临时解析失败（EAI_AGAIN）",
+    ENOTFOUND: "DNS解析失败（ENOTFOUND）",
+    ETIMEDOUT: "网络请求超时（ETIMEDOUT）",
+    ECONNRESET: "网络连接重置（ECONNRESET）",
+    ECONNREFUSED: "网络连接被拒绝（ECONNREFUSED）",
+    EHOSTUNREACH: "目标主机不可达（EHOSTUNREACH）",
+    ENETUNREACH: "目标网络不可达（ENETUNREACH）",
+    UND_ERR_CONNECT_TIMEOUT: "Fetch连接超时（UND_ERR_CONNECT_TIMEOUT）",
+    UND_ERR_HEADERS_TIMEOUT: "Fetch响应头超时（UND_ERR_HEADERS_TIMEOUT）",
+    UND_ERR_SOCKET: "Fetch套接字异常（UND_ERR_SOCKET）",
+  };
+
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && isRecord(current); depth += 1) {
+    const code = typeof current.code === "string" ? current.code : "";
+    const name = typeof current.name === "string" ? current.name : "";
+    if (code && knownCodes[code]) return knownCodes[code];
+    if (name === "AbortError" || code === "ABORT_ERR") return "Fetch请求超时（AbortError）";
+    current = current.cause;
+  }
+  return "Fetch网络错误（无可用的白名单系统错误码）";
+}
+
+export function isRetryableFetchFailure(error: unknown): boolean {
+  const retryableCodes = new Set(["ETIMEDOUT", "ECONNRESET", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_HEADERS_TIMEOUT"]);
+  let current: unknown = error;
+  for (let depth = 0; depth < 4 && isRecord(current); depth += 1) {
+    const code = typeof current.code === "string" ? current.code : "";
+    const name = typeof current.name === "string" ? current.name : "";
+    if (retryableCodes.has(code) || name === "AbortError" || code === "ABORT_ERR") return true;
+    current = current.cause;
+  }
+  return false;
+}
+
+async function fetchWithTimeout(url: string, options: CorsFetchOptions = {}): Promise<Response> {
   const { cors = false, ...requestOptions } = options;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 25000);
@@ -325,7 +453,7 @@ async function fetchWithTimeout(url, options = {}) {
       signal: controller.signal,
       headers: requestHeadersFor(requestOptions.method, {
         cors,
-        headers: requestOptions.headers ?? {},
+        headers: requestOptions.headers,
       }),
     });
   } finally {
@@ -333,7 +461,44 @@ async function fetchWithTimeout(url, options = {}) {
   }
 }
 
-async function assertPublicCorsRead() {
+const RETRYABLE_HEAD_STATUSES = new Set([500, 502, 503, 504]);
+const HEAD_MAX_ATTEMPTS = 3;
+const HEAD_RETRY_BASE_DELAY_MS = 250;
+
+export async function headWithBoundedRetry(
+  url: string,
+  request: HeadRequest = fetchWithTimeout,
+  wait: (milliseconds: number) => Promise<void> = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+): Promise<Response> {
+  for (let attempt = 1; attempt <= HEAD_MAX_ATTEMPTS; attempt += 1) {
+    let response: Response;
+    try {
+      response = await request(url, { method: "HEAD" });
+    } catch (error) {
+      if (attempt === HEAD_MAX_ATTEMPTS || !isRetryableFetchFailure(error)) throw error;
+      await wait(HEAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
+      continue;
+    }
+
+    if (attempt < HEAD_MAX_ATTEMPTS && RETRYABLE_HEAD_STATUSES.has(response.status)) {
+      await wait(HEAD_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1));
+      continue;
+    }
+    return response;
+  }
+  throw new Error("HEAD重试达到意外状态。");
+}
+
+function publicReadFailureDetail(error: unknown): string {
+  if (error instanceof Error) {
+    const statusMatch = error.message.match(/^COS CORS 探测对象返回 HTTP (\d{3})。$/);
+    if (statusMatch) return `COS探测对象返回HTTP ${statusMatch[1]}`;
+    if (error.message.includes("Access-Control-Allow-Origin")) return "COS跨域响应头与本站来源不匹配";
+  }
+  return classifyFetchFailure(error);
+}
+
+async function assertPublicCorsRead(): Promise<void> {
   let response;
   try {
     response = await fetchWithTimeout(`${EXPECTED_COS_ORIGIN}/${CORS_PROBE_KEY}`, { method: "GET", cors: true });
@@ -343,16 +508,14 @@ async function assertPublicCorsRead() {
     }
     assertCorsHeaders(response, "现有 COS 文档 GET");
   } catch (error) {
-    throw new Error(`上传前的跨域读取检查失败，未上传任何文件：${error.message}`);
+    throw new Error(`上传前的跨域读取检查失败，未上传任何文件（${publicReadFailureDetail(error)}）。`);
   }
 }
 
-export function summarizeCoscliFailure(result, command = "命令", diagnostics = "") {
+export function summarizeCoscliFailure(result: CoscliCommandResult, command = "命令", diagnostics = ""): string {
   const stdout = Buffer.isBuffer(result?.stdout) ? result.stdout.toString("utf8") : String(result?.stdout ?? "");
   const stderr = Buffer.isBuffer(result?.stderr) ? result.stderr.toString("utf8") : String(result?.stderr ?? "");
-  const output = [stdout, stderr]
-    .concat(typeof diagnostics === "string" ? diagnostics : String(diagnostics?.text ?? ""))
-    .join("\n");
+  const output = [stdout, stderr, diagnostics].join("\n");
   const code =
     output.match(/<Code>\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\s*<\/Code>/i)?.[1] ??
     output.match(/\b(?:COS\s+)?(?:ErrorCode|Code)\s*[:=]\s*([A-Za-z][A-Za-z0-9_.-]{0,63})\b/i)?.[1];
@@ -360,8 +523,9 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
     output.match(/\bHTTP(?:\/\d(?:\.\d)?)?\s*[: ]?\s*(\d{3})\b/i)?.[1] ??
     output.match(/<HTTPStatus>\s*(\d{3})\s*<\/HTTPStatus>/i)?.[1] ??
     output.match(/\b(?:StatusCode|HTTPStatus|status(?:\s*code)?)\s*[:=]\s*(\d{3})\b/i)?.[1];
-  const errorCode = /^[A-Z0-9_]{1,24}$/.test(result?.error?.code ?? "") ? result.error.code : null;
-  const safeCategory = [
+  const rawErrorCode = result.error?.code;
+  const errorCode = typeof rawErrorCode === "string" && /^[A-Z0-9_]{1,24}$/.test(rawErrorCode) ? rawErrorCode : null;
+  const safeCategories: ReadonlyArray<readonly [RegExp, string]> = [
     [/\bAccessDenied\b|access denied|forbidden|permission denied/i, "访问权限拒绝"],
     [/\bSignatureDoesNotMatch\b|\bInvalidAccessKeyId\b/i, "签名或密钥无效"],
     [/\bNoSuchBucket\b/i, "目标桶不存在"],
@@ -372,7 +536,8 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
     [/no such file|file not found|cannot stat/i, "本地产物路径不存在"],
     [/unknown flag|unknown command/i, "COSCLI参数不兼容"],
     [/x509|TLS handshake|connection refused|timed? ?out/i, "网络或TLS连接失败"],
-  ].find(([pattern]) => pattern.test(output))?.[1] ?? null;
+  ];
+  const safeCategory = safeCategories.find(([pattern]) => pattern.test(output))?.[1] ?? null;
   const details = [
     errorCode ? `本地错误码 ${errorCode}` : null,
     status ? `HTTP ${status}` : null,
@@ -382,13 +547,14 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
   return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
 }
 
-export async function readCoscliDiagnostics(directory) {
+export async function readCoscliDiagnostics(directory: string | undefined): Promise<string> {
   if (!directory) return "";
   const chunks = [];
   let bytesRead = 0;
-  const pendingDirectories = [{ path: directory, depth: 0 }];
+  const pendingDirectories: DirectoryEntry[] = [{ path: directory, depth: 0 }];
   while (pendingDirectories.length > 0 && bytesRead < 4 * 1024 * 1024) {
     const current = pendingDirectories.pop();
+    if (!current) continue;
     let entries;
     try {
       entries = await readdir(current.path, { withFileTypes: true });
@@ -417,7 +583,7 @@ export async function readCoscliDiagnostics(directory) {
   return chunks.join("\n");
 }
 
-async function runCoscli(binary, args, cwd, diagnosticDirectory) {
+async function runCoscli(binary: string, args: string[], cwd: string, diagnosticDirectory: string): Promise<void> {
   let result;
   try {
     result = spawnSync(binary, args, {
@@ -436,7 +602,7 @@ async function runCoscli(binary, args, cwd, diagnosticDirectory) {
   }
 }
 
-async function resolveCosCliConfig(root) {
+async function resolveCosCliConfig(root: string): Promise<{ binary: string; configPath: string; tempDir: string; logPath: string }> {
   const suppliedPath = process.env.TRIPICK_COSCLI_CONFIG;
   if (!suppliedPath) {
     throw new Error("缺少 TRIPICK_COSCLI_CONFIG。由获准的认证提供器准备临时 COSCLI 配置文件并传入路径；脚本不读取密钥值或本机默认配置。");
@@ -464,7 +630,7 @@ async function resolveCosCliConfig(root) {
   return { binary, configPath, tempDir, logPath };
 }
 
-async function verifyAsset(asset) {
+async function verifyAsset(asset: AssetRecord): Promise<void> {
   let response;
   try {
     response = await fetchWithTimeout(asset.url, { method: "GET", cors: true });
@@ -475,13 +641,13 @@ async function verifyAsset(asset) {
   assertAssetResponse({ response, asset, bytes });
 }
 
-async function verifyManifest(manifest) {
+async function verifyManifest(manifest: ReleaseManifest): Promise<void> {
   await assertPublicCorsRead();
   for (const asset of manifest.assets) await verifyAsset(asset);
   console.log(`COS 资源验证通过：${manifest.releaseId}（${manifest.assets.length} 个对象）。`);
 }
 
-async function uploadManifest(root, manifest) {
+async function uploadManifest(root: string, manifest: ReleaseManifest): Promise<void> {
   const credentials = await resolveCosCliConfig(root);
   const distDir = path.join(root, "dist");
   try {
@@ -489,7 +655,7 @@ async function uploadManifest(root, manifest) {
     for (const asset of manifest.assets) {
       let head;
       try {
-        head = await fetchWithTimeout(asset.url, { method: "HEAD" });
+        head = await headWithBoundedRetry(asset.url);
       } catch {
         throw new Error(`${asset.path} 上传前 HEAD 失败；未覆盖现有版本。`);
       }
@@ -518,7 +684,7 @@ async function uploadManifest(root, manifest) {
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   const root = path.resolve(process.env.TRIPICK_SITE_ROOT || process.cwd());
   const command = process.argv[2];
   if (command === "build") return buildCos(root);
@@ -529,12 +695,12 @@ async function main() {
     return uploadManifest(root, manifest);
   }
 
-  throw new Error("用法：node scripts/cos-assets.mjs <build|upload|verify>");
+  throw new Error("用法：node scripts/cos-assets.ts <build|upload|verify>");
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(`COS 资源任务失败：${error.message}`);
+    console.error(`COS 资源任务失败：${error instanceof Error ? error.message : "未知错误"}`);
     process.exitCode = 1;
   });
 }

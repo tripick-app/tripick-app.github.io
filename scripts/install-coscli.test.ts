@@ -8,7 +8,7 @@ import test from "node:test";
 import {
   COSCLI_LINUX_AMD64_URL,
   downloadCoscli,
-} from "./install-coscli.mjs";
+} from "./install-coscli.ts";
 
 test("安装器验证固定摘要后再写入可执行文件", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "tripick-coscli-test-"));

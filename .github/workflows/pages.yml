@@ -40,6 +40,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Typecheck site and release tooling
+        run: pnpm typecheck
+
       - name: Test COS publishing safeguards
         run: pnpm test:cos
 
@@ -47,20 +50,20 @@ jobs:
         run: pnpm build:cos
 
       - name: Install pinned COSCLI
-        run: node scripts/install-coscli.mjs
+        run: node scripts/install-coscli.ts
 
       - name: Prepare temporary COS credentials
         env:
           TRIPICK_COS_SECRET_ID: ${{ secrets.TRIPICK_COS_SECRET_ID }}
           TRIPICK_COS_SECRET_KEY: ${{ secrets.TRIPICK_COS_SECRET_KEY }}
-        run: node scripts/cos-auth-config.mjs prepare
+        run: node scripts/cos-auth-config.ts prepare
 
       - name: Upload and verify COS assets
         run: pnpm cos:upload
 
       - name: Remove temporary COS credentials
         if: always()
-        run: node scripts/cos-auth-config.mjs cleanup
+        run: node scripts/cos-auth-config.ts cleanup
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
