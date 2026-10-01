@@ -368,28 +368,36 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
   return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
 }
 
-async function readCoscliDiagnostics(directory) {
+export async function readCoscliDiagnostics(directory) {
   if (!directory) return "";
-  let entries;
-  try {
-    entries = await readdir(directory, { withFileTypes: true });
-  } catch {
-    return "";
-  }
-
   const chunks = [];
   let bytesRead = 0;
-  for (const entry of entries) {
-    if (!entry.isFile() || bytesRead >= 4 * 1024 * 1024) continue;
-    const filePath = path.join(directory, entry.name);
+  const pendingDirectories = [{ path: directory, depth: 0 }];
+  while (pendingDirectories.length > 0 && bytesRead < 4 * 1024 * 1024) {
+    const current = pendingDirectories.pop();
+    let entries;
     try {
-      const info = await stat(filePath);
-      if (info.size > 1024 * 1024 || bytesRead + info.size > 4 * 1024 * 1024) continue;
-      const content = await readFile(filePath, "utf8");
-      chunks.push(content);
-      bytesRead += info.size;
+      entries = await readdir(current.path, { withFileTypes: true });
     } catch {
-      // Diagnostic logs are optional; never replace the upload error with a log-read error.
+      continue;
+    }
+
+    for (const entry of entries) {
+      const filePath = path.join(current.path, entry.name);
+      if (entry.isDirectory() && current.depth < 2) {
+        pendingDirectories.push({ path: filePath, depth: current.depth + 1 });
+        continue;
+      }
+      if (!entry.isFile() || bytesRead >= 4 * 1024 * 1024) continue;
+      try {
+        const info = await stat(filePath);
+        if (info.size > 1024 * 1024 || bytesRead + info.size > 4 * 1024 * 1024) continue;
+        const content = await readFile(filePath, "utf8");
+        chunks.push(content);
+        bytesRead += info.size;
+      } catch {
+        // Diagnostic logs are optional; never replace the upload error with a log-read error.
+      }
     }
   }
   return chunks.join("\n");

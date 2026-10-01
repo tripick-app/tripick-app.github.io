@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import {
   CACHE_CONTROL,
@@ -12,6 +15,7 @@ import {
   assetBaseForRelease,
   makeAssetRecord,
   mimeTypeFor,
+  readCoscliDiagnostics,
   requestHeadersFor,
   rewriteRootAssetReferences,
   summarizeCoscliFailure,
@@ -123,4 +127,24 @@ test("coscli 错误诊断只暴露可识别错误码与状态，不回显原始�
   assert.match(message, /COS 错误码 AccessDenied/);
   assert.match(message, /原始输出已隐藏/);
   assert.doesNotMatch(message, /synthetic-secret-value|<Message>|upload failed/);
+});
+
+test("从coscli嵌套临时日志中提取脱敏错误状态", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "tripick-coscli-log-test-"));
+  try {
+    const nestedLogDirectory = path.join(root, "daily-run");
+    await mkdir(nestedLogDirectory, { mode: 0o700 });
+    await writeFile(
+      path.join(nestedLogDirectory, "error.report"),
+      "<Error><Code>AccessDenied</Code><Message>synthetic-secret-value</Message><HTTPStatus>403</HTTPStatus></Error>",
+    );
+
+    const diagnostics = await readCoscliDiagnostics(root);
+    const message = summarizeCoscliFailure({ status: 1 }, "cp", diagnostics);
+    assert.match(message, /HTTP 403/);
+    assert.match(message, /COS 错误码 AccessDenied/);
+    assert.doesNotMatch(message, /synthetic-secret-value|<Message>/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
