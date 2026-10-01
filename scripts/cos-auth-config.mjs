@@ -82,18 +82,21 @@ export async function prepareCoscliAuth({
     await mkdir(logPath, { mode: 0o700 });
     const privateEnv = { ...env, HOME: directory };
     const configContents = JSON.stringify({
-      base: {
-        secretid: secretId,
-        secretkey: secretKey,
-        sessiontoken: "",
-        protocol: "https",
-        disableencryption: "true",
+      // COSCLI v1.0.9 unmarshals configuration from the top-level "cos" key.
+      cos: {
+        base: {
+          secretid: secretId,
+          secretkey: secretKey,
+          sessiontoken: "",
+          protocol: "https",
+          disableencryption: "true",
+        },
+        buckets: [{
+          name: COS_BUCKET,
+          alias: "tripick-assets",
+          region: COS_REGION,
+        }],
       },
-      buckets: [{
-        name: COS_BUCKET,
-        alias: "tripick-assets",
-        region: COS_REGION,
-      }],
     });
     await writeFile(configPath, `${configContents}\n`, { mode: 0o600, flag: "wx" });
     await chmod(configPath, 0o600);

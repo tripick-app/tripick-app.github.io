@@ -43,11 +43,12 @@ test("认证配置只在runner临时目录中创建，密钥不进入CLI参数",
     assert.equal(calls[0].options.stdio, "ignore");
 
     const config = JSON.parse(await readFile(result.configPath, "utf8"));
-    assert.equal(config.base.secretid, idFixture);
-    assert.equal(config.base.secretkey, keyFixture);
-    assert.equal(config.base.disableencryption, "true");
-    assert.equal(config.buckets[0].name, "s-1307850796");
-    assert.equal(config.buckets[0].region, "ap-beijing");
+    assert.deepEqual(Object.keys(config), ["cos"]);
+    assert.equal(config.cos.base.secretid, idFixture);
+    assert.equal(config.cos.base.secretkey, keyFixture);
+    assert.equal(config.cos.base.disableencryption, "true");
+    assert.equal(config.cos.buckets[0].name, "s-1307850796");
+    assert.equal(config.cos.buckets[0].region, "ap-beijing");
 
     const info = await stat(result.configPath);
     assert.equal(info.mode & 0o077, 0);

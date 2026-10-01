@@ -348,8 +348,9 @@ async function assertPublicCorsRead() {
 }
 
 export function summarizeCoscliFailure(result, command = "命令", diagnostics = "") {
-  const output = [result?.stdout, result?.stderr]
-    .map((value) => Buffer.isBuffer(value) ? value.toString("utf8") : String(value ?? ""))
+  const stdout = Buffer.isBuffer(result?.stdout) ? result.stdout.toString("utf8") : String(result?.stdout ?? "");
+  const stderr = Buffer.isBuffer(result?.stderr) ? result.stderr.toString("utf8") : String(result?.stderr ?? "");
+  const output = [stdout, stderr]
     .concat(typeof diagnostics === "string" ? diagnostics : String(diagnostics?.text ?? ""))
     .join("\n");
   const code =
@@ -360,25 +361,30 @@ export function summarizeCoscliFailure(result, command = "命令", diagnostics =
     output.match(/<HTTPStatus>\s*(\d{3})\s*<\/HTTPStatus>/i)?.[1] ??
     output.match(/\b(?:StatusCode|HTTPStatus|status(?:\s*code)?)\s*[:=]\s*(\d{3})\b/i)?.[1];
   const errorCode = /^[A-Z0-9_]{1,24}$/.test(result?.error?.code ?? "") ? result.error.code : null;
+  const safeCategory = [
+    [/\bAccessDenied\b|access denied|forbidden|permission denied/i, "访问权限拒绝"],
+    [/\bSignatureDoesNotMatch\b|\bInvalidAccessKeyId\b/i, "签名或密钥无效"],
+    [/\bNoSuchBucket\b/i, "目标桶不存在"],
+    [/\bNoSuchKey\b/i, "目标对象不存在"],
+    [/secretID is missing|secretKey is missing/i, "COSCLI未读取到凭据字段"],
+    [/endpoint is missing|missing endpoint/i, "COS端点配置缺失"],
+    [/invalid meta|copy invalid meta/i, "上传元数据格式错误"],
+    [/no such file|file not found|cannot stat/i, "本地产物路径不存在"],
+    [/unknown flag|unknown command/i, "COSCLI参数不兼容"],
+    [/x509|TLS handshake|connection refused|timed? ?out/i, "网络或TLS连接失败"],
+  ].find(([pattern]) => pattern.test(output))?.[1] ?? null;
   const details = [
     errorCode ? `本地错误码 ${errorCode}` : null,
     status ? `HTTP ${status}` : null,
     code ? `COS 错误码 ${code}` : null,
+    safeCategory,
   ].filter(Boolean);
-  if (details.length === 0 && typeof diagnostics === "object" && diagnostics !== null) {
-    details.push(
-      diagnostics.files === 0
-        ? "coscli 未生成文件级错误日志"
-        : `已扫描 ${diagnostics.files} 个临时日志（${diagnostics.bytes} 字节），未提取到安全错误码`,
-    );
-  }
   return `coscli ${command} 失败（退出码 ${result?.status ?? "unknown"}${details.length ? `；${details.join("；")}` : ""}）；原始输出已隐藏。`;
 }
 
 export async function readCoscliDiagnostics(directory) {
-  if (!directory) return { text: "", files: 0, bytes: 0 };
+  if (!directory) return "";
   const chunks = [];
-  let filesRead = 0;
   let bytesRead = 0;
   const pendingDirectories = [{ path: directory, depth: 0 }];
   while (pendingDirectories.length > 0 && bytesRead < 4 * 1024 * 1024) {
@@ -402,14 +408,13 @@ export async function readCoscliDiagnostics(directory) {
         if (info.size > 1024 * 1024 || bytesRead + info.size > 4 * 1024 * 1024) continue;
         const content = await readFile(filePath, "utf8");
         chunks.push(content);
-        filesRead += 1;
         bytesRead += info.size;
       } catch {
         // Diagnostic logs are optional; never replace the upload error with a log-read error.
       }
     }
   }
-  return { text: chunks.join("\n"), files: filesRead, bytes: bytesRead };
+  return chunks.join("\n");
 }
 
 async function runCoscli(binary, args, cwd, diagnosticDirectory) {
@@ -500,7 +505,6 @@ async function uploadManifest(root, manifest) {
         "--config-path", credentials.configPath,
         "--protocol", "https",
         "--init-skip",
-        "--disable-log",
         "--log-path", credentials.logPath,
         "--process-log-path", credentials.logPath,
         "--fail-output-path", credentials.logPath,

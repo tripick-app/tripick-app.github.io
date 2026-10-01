@@ -140,8 +140,7 @@ test("从coscli嵌套临时日志中提取脱敏错误状态", async () => {
     );
 
     const diagnostics = await readCoscliDiagnostics(root);
-    assert.equal(diagnostics.files, 1);
-    assert.ok(diagnostics.bytes > 0);
+    assert.match(diagnostics, /AccessDenied/);
     const message = summarizeCoscliFailure({ status: 1 }, "cp", diagnostics);
     assert.match(message, /HTTP 403/);
     assert.match(message, /COS 错误码 AccessDenied/);
@@ -151,8 +150,12 @@ test("从coscli嵌套临时日志中提取脱敏错误状态", async () => {
   }
 });
 
-test("没有文件级错误日志时仅说明诊断日志缺失", () => {
-  const message = summarizeCoscliFailure({ status: 1 }, "cp", { text: "", files: 0, bytes: 0 });
-  assert.match(message, /coscli 未生成文件级错误日志/);
-  assert.doesNotMatch(message, /secret|cos.yaml|<Error>/i);
+test("已知COS错误类别使用固定标签，不回显错误正文", () => {
+  const message = summarizeCoscliFailure({ status: 1, stderr: "AccessDenied for synthetic-secret-value" }, "cp");
+  assert.match(message, /访问权限拒绝/);
+  assert.doesNotMatch(message, /synthetic-secret-value/);
+
+  const configMessage = summarizeCoscliFailure({ status: 1, stdout: "secretID is missing" }, "cp");
+  assert.match(configMessage, /COSCLI未读取到凭据字段/);
+  assert.doesNotMatch(configMessage, /secretID is missing/);
 });
