@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ImgHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import type { Variants } from "motion/react";
 import * as m from "motion/react-m";
+import phoneSelectEn from "../assets/plates/phone-app-screen-en.png";
+import phoneSelectZh from "../assets/plates/phone-app-screen.png";
 
 type Language = "zh" | "en";
 
@@ -9,6 +11,11 @@ const zhCopy = {
     description: "Tripick 在 iPhone 本地整理旅程照片。按拍摄时间与可用的地点信息归拢，再由你复核和确认。",
     heroImageAlt: "夕阳照亮海面、山坡与海岸村庄的旅行风景",
     appScreenAlt: "Tripick 精选预览界面，展示六张候选旅行照片、分析信息和确认操作",
+    appCreateScreenAlt: "Tripick 新建界面预览，展示选择相册与生成的旅行样例照片",
+    phoneSlideNavigation: "手机界面预览",
+    phoneSlideSelectAlbum: "新建 / 选择相册",
+    phoneSlideCurationPreview: "精选预览",
+    phoneSlidePageLabel: "第 {current} 页，共 {total} 页",
     coastImageAlt: "日落时分的海岸村庄与山坡",
     mountainImageAlt: "雾中的山脉与森林",
     skip: "跳到正文",
@@ -66,6 +73,11 @@ const copy = {
     description: "Tripick organizes trip photos on your iPhone by capture time and available location, then lets you review and confirm your picks.",
     heroImageAlt: "Coastal villages and hills beside the sea at sunset",
     appScreenAlt: "Tripick curation preview showing six candidate travel photos, analysis details, and the confirmation action",
+    appCreateScreenAlt: "Tripick's new flow screen showing album selection and a generated sample travel photo",
+    phoneSlideNavigation: "Phone screen preview",
+    phoneSlideSelectAlbum: "Choose an album",
+    phoneSlideCurationPreview: "Curation preview",
+    phoneSlidePageLabel: "Page {current} of {total}",
     coastImageAlt: "A coastal village and hillside at sunset",
     mountainImageAlt: "Misty mountains and forest",
     skip: "Skip to content",
@@ -116,7 +128,7 @@ const copy = {
   },
 } satisfies Record<Language, SiteCopy>;
 
-type ImageAsset = { src: string; srcSet: string; placeholder: string | null; width: number; height: number };
+type ImageAsset = { src: string; srcSet: string | null; placeholder: string | null; width: number; height: number };
 
 const imageAssets = {
   coast: {
@@ -144,6 +156,20 @@ const imageAssets = {
     src: "/assets/plates/phone-review-en.png",
     srcSet: "/assets/images/webp/review-en-640.webp 640w, /assets/images/webp/review-en-960.webp 960w, /assets/images/webp/review-en-1320.webp 1320w",
     placeholder: "/assets/images/webp/review-en-blur.webp",
+    width: 1320,
+    height: 2868,
+  },
+  phoneSelectZh: {
+    src: phoneSelectZh,
+    srcSet: null,
+    placeholder: null,
+    width: 1320,
+    height: 2868,
+  },
+  phoneSelectEn: {
+    src: phoneSelectEn,
+    srcSet: null,
+    placeholder: null,
     width: 1320,
     height: 2868,
   },
@@ -189,23 +215,33 @@ type ResponsivePhotoProps = {
   loading?: ImgHTMLAttributes<HTMLImageElement>["loading"];
   priority?: boolean;
   decorative?: boolean;
+  onReady?: () => void;
 };
 
 type PhotoStyle = CSSProperties & { "--photo-placeholder": string };
 
 type PhotoStatus = "loading" | "loaded" | "error";
 
-function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", priority = false, decorative = false }: ResponsivePhotoProps) {
+function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", priority = false, decorative = false, onReady }: ResponsivePhotoProps) {
   const image = imageAssets[name];
   const imageRef = useRef<HTMLImageElement>(null);
+  const onReadyRef = useRef(onReady);
   const pictureStyle: PhotoStyle = {
     "--photo-placeholder": image.placeholder ? `url("${image.placeholder}")` : "none",
   };
   const [status, setStatus] = useState<PhotoStatus>("loading");
 
   useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
+  useEffect(() => {
     const element = imageRef.current;
-    if (element?.complete) setStatus(element.naturalWidth > 0 ? "loaded" : "error");
+    if (element?.complete) {
+      const loaded = element.naturalWidth > 0;
+      setStatus(loaded ? "loaded" : "error");
+      if (loaded) onReadyRef.current?.();
+    }
   }, []);
 
   return (
@@ -214,7 +250,7 @@ function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", p
       style={pictureStyle}
       aria-hidden={decorative || undefined}
     >
-      <source type="image/webp" srcSet={image.srcSet} sizes={sizes} />
+      {image.srcSet ? <source type="image/webp" srcSet={image.srcSet} sizes={sizes} /> : null}
       <img
         ref={imageRef}
         src={image.src}
@@ -225,10 +261,198 @@ function ResponsivePhoto({ name, alt, className = "", sizes, loading = "lazy", p
         fetchPriority={priority ? "high" : "auto"}
         width={image.width}
         height={image.height}
-        onLoad={() => setStatus("loaded")}
+        onLoad={() => {
+          setStatus("loaded");
+          onReadyRef.current?.();
+        }}
         onError={() => setStatus("error")}
       />
     </picture>
+  );
+}
+
+const PHONE_AUTOPLAY_INTERVAL_MS = 4500;
+const PHONE_INTERACTION_PAUSE_MS = 8000;
+
+type PhoneCarouselSlide = {
+  name: keyof typeof imageAssets;
+  label: string;
+  alt: string;
+};
+
+function PhoneScreenCarousel({ language, strings }: { language: Language; strings: SiteCopy }) {
+  const slides: PhoneCarouselSlide[] = language === "en"
+    ? [
+      { name: "phoneSelectEn", label: strings.phoneSlideSelectAlbum, alt: strings.appCreateScreenAlt },
+      { name: "appEn", label: strings.phoneSlideCurationPreview, alt: strings.appScreenAlt },
+    ]
+    : [
+      { name: "phoneSelectZh", label: strings.phoneSlideSelectAlbum, alt: strings.appCreateScreenAlt },
+      { name: "appZh", label: strings.phoneSlideCurationPreview, alt: strings.appScreenAlt },
+    ];
+  const screenRef = useRef<HTMLDivElement>(null);
+  const dotRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const [loadedSlides, setLoadedSlides] = useState<number[]>([]);
+  const [isInView, setIsInView] = useState(true);
+  const [isPageVisible, setIsPageVisible] = useState(() => typeof document === "undefined" || document.visibilityState === "visible");
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => (
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  ));
+  const [isPointerInside, setIsPointerInside] = useState(false);
+  const [isFocusWithin, setIsFocusWithin] = useState(false);
+  const [pauseUntil, setPauseUntil] = useState(0);
+
+  const markSlideLoaded = useCallback((index: number) => {
+    setLoadedSlides((current) => current.includes(index) ? current : [...current, index]);
+  }, []);
+
+  useEffect(() => {
+    const element = screenRef.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+
+    const observer = new IntersectionObserver((entries) => {
+      setIsInView(entries.some((entry) => entry.isIntersecting));
+    }, { threshold: 0.05 });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const updateVisibility = () => setIsPageVisible(document.visibilityState === "visible");
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    const preference = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setPrefersReducedMotion(preference.matches);
+    updatePreference();
+    preference.addEventListener("change", updatePreference);
+    return () => preference.removeEventListener("change", updatePreference);
+  }, []);
+
+  useEffect(() => {
+    if (
+      slides.length < 2
+      || loadedSlides.length !== slides.length
+      || !isInView
+      || !isPageVisible
+      || prefersReducedMotion
+      || isPointerInside
+      || isFocusWithin
+    ) return;
+
+    const timeUntilResume = pauseUntil - Date.now();
+    const delay = timeUntilResume > 0 ? timeUntilResume : PHONE_AUTOPLAY_INTERVAL_MS;
+    const timer = window.setTimeout(() => {
+      setActiveSlide((current) => (current + 1) % slides.length);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [
+    activeSlide,
+    isFocusWithin,
+    isInView,
+    isPageVisible,
+    isPointerInside,
+    loadedSlides.length,
+    pauseUntil,
+    prefersReducedMotion,
+    slides.length,
+  ]);
+
+  const selectSlide = (index: number) => {
+    setActiveSlide(index);
+    setPauseUntil(Date.now() + PHONE_INTERACTION_PAUSE_MS);
+  };
+
+  const handleDotKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") nextIndex = (index + 1) % slides.length;
+    if (event.key === "ArrowLeft" || event.key === "ArrowUp") nextIndex = (index - 1 + slides.length) % slides.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = slides.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    dotRefs.current[nextIndex]?.focus();
+    selectSlide(nextIndex);
+  };
+
+  return (
+    <>
+      <div className="phone-screen" ref={screenRef}>
+        {slides.map((slide, index) => {
+          const isActive = activeSlide === index;
+          return (
+            <div
+              key={slide.name}
+              className={"phone-screen-slide" + (isActive ? " is-active" : "")}
+              aria-hidden={!isActive}
+              lang={language === "en" ? "en" : "zh-Hans"}
+            >
+              <ResponsivePhoto
+                name={slide.name}
+                className="phone-screen-image"
+                alt={slide.alt}
+                sizes="(max-width: 800px) 40vw, (max-width: 1120px) 26vw, 20vw"
+                loading="eager"
+                priority={isActive}
+                decorative={!isActive}
+                onReady={() => markSlideLoaded(index)}
+              />
+            </div>
+          );
+        })}
+        <m.span
+          className="phone-glint"
+          aria-hidden="true"
+          initial={{ opacity: 0, x: "-24%" }}
+          animate={{ opacity: [0, 0.3, 0], x: ["-24%", "252%"] }}
+          transition={{ duration: 1.12, delay: 1.35, ease: [0.16, 1, 0.3, 1] }}
+        />
+      </div>
+      {slides.length > 1 ? (
+        <nav
+          className="phone-carousel-controls"
+          aria-label={strings.phoneSlideNavigation}
+          onPointerEnter={() => setIsPointerInside(true)}
+          onPointerLeave={() => {
+            setIsPointerInside(false);
+            setPauseUntil(Date.now() + PHONE_INTERACTION_PAUSE_MS);
+          }}
+          onFocusCapture={() => setIsFocusWithin(true)}
+          onBlurCapture={(event) => {
+            const nextTarget = event.relatedTarget;
+            if (!(nextTarget instanceof Node) || !event.currentTarget.contains(nextTarget)) {
+              setIsFocusWithin(false);
+              setPauseUntil(Date.now() + PHONE_INTERACTION_PAUSE_MS);
+            }
+          }}
+        >
+          {slides.map((slide, index) => {
+            const pageLabel = strings.phoneSlidePageLabel
+              .replace("{current}", String(index + 1))
+              .replace("{total}", String(slides.length));
+            const isActive = activeSlide === index;
+            return (
+              <button
+                key={slide.name}
+                ref={(element) => { dotRefs.current[index] = element; }}
+                className="phone-carousel-dot-button"
+                type="button"
+                aria-label={slide.label + ", " + pageLabel}
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => selectSlide(index)}
+                onKeyDown={(event) => handleDotKeyDown(event, index)}
+              >
+                <span className="phone-carousel-dot" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </nav>
+      ) : null}
+    </>
   );
 }
 
@@ -322,10 +546,9 @@ function App() {
             <div className="phone-showcase">
               <m.div
                 className="phone-motion"
-                initial={{ opacity: 0.82, y: 56, rotateY: -16, rotateZ: -4, scale: 0.91 }}
+                initial={{ opacity: 1, y: 56, rotateY: -16, rotateZ: -4, scale: 0.91 }}
                 animate={{ opacity: 1, y: 0, rotateY: 0, rotateZ: 0, scale: 1 }}
                 transition={{
-                  opacity: { duration: 0.68, delay: 0.12 },
                   y: { duration: 1.28, delay: 0.12, ease: [0.16, 1, 0.3, 1] },
                   rotateY: { duration: 1.28, delay: 0.12, ease: [0.16, 1, 0.3, 1] },
                   rotateZ: { duration: 1.28, delay: 0.12, ease: [0.16, 1, 0.3, 1] },
@@ -337,24 +560,7 @@ function App() {
                   animate={{ y: [0, -7, 0], rotateZ: [0, 0.28, 0] }}
                   transition={{ duration: 7.2, delay: 1.55, repeat: Infinity, ease: "easeInOut" }}
                 >
-                  <div className="phone-screen">
-                    <ResponsivePhoto
-                      key={language}
-                      name={language === "en" ? "appEn" : "appZh"}
-                      className="phone-screen-image"
-                      alt={strings.appScreenAlt}
-                      sizes="(max-width: 800px) 40vw, (max-width: 1120px) 26vw, 20vw"
-                      loading="eager"
-                      priority
-                    />
-                    <m.span
-                      className="phone-glint"
-                      aria-hidden="true"
-                      initial={{ opacity: 0, x: "-24%" }}
-                      animate={{ opacity: [0, 0.3, 0], x: ["-24%", "252%"] }}
-                      transition={{ duration: 1.12, delay: 1.35, ease: [0.16, 1, 0.3, 1] }}
-                    />
-                  </div>
+                  <PhoneScreenCarousel key={language} language={language} strings={strings} />
                   <ResponsivePhoto
                     name="frame"
                     className="phone-frame"
